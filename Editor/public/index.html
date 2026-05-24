@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>App Store Slide Editor</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-scroll">
+          <div class="sidebar-header">
+            <div class="sidebar-header-row">
+              <div>
+                <h1 id="appLabel">Editor</h1>
+              </div>
+              <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light/dark mode">◐</button>
+            </div>
+          </div>
+
+          <div class="nav-section">
+            <p class="nav-label">Device</p>
+            <div class="tab-row" id="deviceTabs"></div>
+          </div>
+          <div class="nav-section">
+            <p class="nav-label">Locale</p>
+            <div class="tab-row wrap" id="localeTabs"></div>
+          </div>
+          <div class="nav-section">
+            <p class="nav-label">Version</p>
+            <select class="version-select" id="versionSelect"></select>
+          </div>
+
+          <div class="nav-section global-settings">
+            <p class="nav-label">Global</p>
+            <label class="global-color-field">
+              <span>Caption text color</span>
+              <input id="captionColor" type="color" value="#000000">
+            </label>
+            <label class="global-color-field">
+              <span>Slide color</span>
+              <input id="backgroundColor" type="color" value="#8dcaf7">
+            </label>
+          </div>
+
+          <div class="nav-section global-settings global-caption-padding">
+            <p class="nav-label">Caption</p>
+            <div class="stepper-field">
+              <span>Top padding</span>
+              <div class="stepper">
+                <button class="stepper-button" data-step="-2" data-target="captionTopPadding" type="button">−</button>
+                <input id="captionTopPadding" type="number" min="0" max="360" step="2">
+                <button class="stepper-button" data-step="2" data-target="captionTopPadding" type="button">+</button>
+              </div>
+            </div>
+            <div class="stepper-field">
+              <span>Bottom padding</span>
+              <div class="stepper">
+                <button class="stepper-button" data-step="-2" data-target="captionBottomPadding" type="button">−</button>
+                <input id="captionBottomPadding" type="number" min="0" max="360" step="2">
+                <button class="stepper-button" data-step="2" data-target="captionBottomPadding" type="button">+</button>
+              </div>
+            </div>
+            <div class="stepper-field">
+              <span>Horizontal padding</span>
+              <div class="stepper">
+                <button class="stepper-button" data-step="-2" data-target="captionHorizontalPadding" type="button">−</button>
+                <input id="captionHorizontalPadding" type="number" min="0" max="360" step="2">
+                <button class="stepper-button" data-step="2" data-target="captionHorizontalPadding" type="button">+</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="slide-list" id="slideList"></div>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <div class="topbar">
+          <div>
+            <p class="eyebrow" id="slideIdLabel"></p>
+            <h2 id="captionLabel"></h2>
+            <p class="context-line" id="contextLabel"></p>
+          </div>
+          <div class="actions">
+            <span class="last-saved" id="lastSavedLabel" aria-live="polite"></span>
+            <div class="edit-actions">
+              <span class="loading-indicator" id="loadingIndicator" hidden>
+                <span class="spinner" aria-hidden="true"></span>
+                Updating
+              </span>
+              <button class="secondary" id="undoButton" type="button">Undo</button>
+              <button class="secondary" id="redoButton" type="button">Redo</button>
+            </div>
+            <button class="secondary" id="viewAllButton" type="button">View all</button>
+            <button id="saveSlideButton" type="button">Save slide</button>
+          </div>
+        </div>
+
+        <div class="editor-grid">
+          <div class="stage-wrap">
+            <div class="stage" id="stage">
+              <img id="slideImage" alt="Rendered App Store slide">
+              <div class="loupe-preview" id="loupePreview"></div>
+            </div>
+          </div>
+
+          <form class="controls" id="controls">
+            <fieldset class="metadata-fieldset">
+              <legend>Frame</legend>
+              <p class="readonly-value" id="deviceFrameLabel"></p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Caption text</legend>
+              <label class="field">
+                <span>Text</span>
+                <textarea id="captionText" rows="2" spellcheck="true"></textarea>
+              </label>
+              <p class="field-hint">Press Return for a second line.</p>
+            </fieldset>
+
+            <fieldset class="loupe-fieldset" id="loupeFieldset">
+              <legend>Loupe</legend>
+              <label class="toggle-row loupe-toggle">
+                <input id="loupeEnabled" type="checkbox">
+                <span>Show loupe</span>
+              </label>
+              <div class="loupe-clipboard">
+                <span class="loupe-clipboard-label">Clipboard</span>
+                <div class="loupe-actions">
+                  <button class="secondary loupe-action" id="copyLoupeButton" type="button">Copy</button>
+                  <button class="secondary loupe-action" id="pasteLoupeButton" type="button">Paste</button>
+                  <button class="secondary loupe-action loupe-action-wide" id="pasteLoupeLocalesButton" type="button">Paste to all locales</button>
+                </div>
+              </div>
+              <div class="loupe-controls" id="loupeControls">
+                <div class="stepper-field">
+                  <span>Vertical position</span>
+                  <div class="stepper">
+                    <button class="stepper-button" data-step="-12" data-target="loupeCenterY" type="button">−</button>
+                    <input id="loupeCenterY" type="number" min="0" max="2796" step="12">
+                    <button class="stepper-button" data-step="12" data-target="loupeCenterY" type="button">+</button>
+                  </div>
+                </div>
+                <div class="stepper-field">
+                  <span>Width</span>
+                  <div class="stepper">
+                    <button class="stepper-button" data-step="-8" data-target="loupeWidth" type="button">−</button>
+                    <input id="loupeWidth" type="number" min="120" max="1290" step="8">
+                    <button class="stepper-button" data-step="8" data-target="loupeWidth" type="button">+</button>
+                  </div>
+                </div>
+                <div class="stepper-field">
+                  <span>Height</span>
+                  <div class="stepper">
+                    <button class="stepper-button" data-step="-8" data-target="loupeHeight" type="button">−</button>
+                    <input id="loupeHeight" type="number" min="0" max="1290" step="8">
+                    <button class="stepper-button" data-step="8" data-target="loupeHeight" type="button">+</button>
+                  </div>
+                </div>
+                <div class="stepper-field">
+                  <span>Corner radius</span>
+                  <div class="stepper">
+                    <button class="stepper-button" data-step="-2" data-target="loupeCornerRadius" type="button">−</button>
+                    <input id="loupeCornerRadius" type="number" min="0" max="200" step="2">
+                    <button class="stepper-button" data-step="2" data-target="loupeCornerRadius" type="button">+</button>
+                  </div>
+                </div>
+                <div class="stepper-field">
+                  <span>Zoom</span>
+                  <div class="stepper">
+                    <button class="stepper-button" data-step="-0.05" data-target="loupeZoom" type="button">−</button>
+                    <input id="loupeZoom" type="number" min="1.1" max="4" step="0.01">
+                    <button class="stepper-button" data-step="0.05" data-target="loupeZoom" type="button">+</button>
+                  </div>
+                </div>
+                <label class="toggle-row">
+                  <input id="loupeBorderEnabled" type="checkbox" checked>
+                  <span>Show border</span>
+                </label>
+              </div>
+            </fieldset>
+
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <div class="gallery-overlay" id="galleryOverlay" hidden>
+      <div class="gallery-panel" role="dialog" aria-labelledby="galleryTitle" aria-modal="true">
+        <div class="gallery-header">
+          <div class="gallery-header-title">
+            <p class="eyebrow">App Store preview</p>
+            <h2 id="galleryTitle">All slides</h2>
+          </div>
+          <div class="gallery-locale-tabs tab-row wrap" id="galleryLocaleTabs"></div>
+          <div class="gallery-header-buttons">
+            <div class="gallery-close-actions">
+              <span class="gallery-save-status" id="gallerySaveStatus" hidden aria-live="polite"></span>
+              <button class="secondary" id="galleryCloseButton" type="button">Close</button>
+            </div>
+            <button id="gallerySaveAllButton" type="button">Save all</button>
+          </div>
+        </div>
+        <div class="gallery-body" id="galleryBody">
+          <section class="gallery-device-section" data-gallery-device="iphone">
+            <div class="gallery-device-header">
+              <h3 class="gallery-row-label">iPhone</h3>
+              <div class="gallery-device-zoom" aria-label="iPhone zoom controls">
+                <button type="button" class="gallery-zoom-button" data-gallery-device="iphone" data-gallery-zoom-step="-0.25" aria-label="Zoom out iPhone slides">−</button>
+                <span class="gallery-device-zoom-label" id="galleryIphoneZoomLabel">100%</span>
+                <button type="button" class="gallery-zoom-button" data-gallery-device="iphone" data-gallery-zoom-step="0.25" aria-label="Zoom in iPhone slides">+</button>
+              </div>
+            </div>
+            <div class="gallery-row gallery-row-iphone" id="galleryIphoneRow"></div>
+          </section>
+          <section class="gallery-device-section" data-gallery-device="ipad">
+            <div class="gallery-device-header">
+              <h3 class="gallery-row-label">iPad</h3>
+              <div class="gallery-device-zoom" aria-label="iPad zoom controls">
+                <button type="button" class="gallery-zoom-button" data-gallery-device="ipad" data-gallery-zoom-step="-0.25" aria-label="Zoom out iPad slides">−</button>
+                <span class="gallery-device-zoom-label" id="galleryIpadZoomLabel">100%</span>
+                <button type="button" class="gallery-zoom-button" data-gallery-device="ipad" data-gallery-zoom-step="0.25" aria-label="Zoom in iPad slides">+</button>
+              </div>
+            </div>
+            <div class="gallery-row gallery-row-ipad" id="galleryIpadRow"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="/editor.js"></script>
+  </body>
+</html>

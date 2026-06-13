@@ -10,7 +10,6 @@ const elements = {
   deviceFrameLabel: document.getElementById("deviceFrameLabel"),
   slideImage: document.getElementById("slideImage"),
   stage: document.getElementById("stage"),
-  loupePreview: document.getElementById("loupePreview"),
   captionTopPadding: document.getElementById("captionTopPadding"),
   captionBottomPadding: document.getElementById("captionBottomPadding"),
   captionHorizontalPadding: document.getElementById("captionHorizontalPadding"),
@@ -63,13 +62,12 @@ let activeSlideId = null;
 let draftLoupe = null;
 let dragSlideId = null;
 let slidePreviewTimer = null;
-let loupePreviewTimer = null;
+let loupeRenderTimer = null;
 let slidePreviewRequest = 0;
 let slidePreviewChain = Promise.resolve();
 let historyStack = [];
 let redoStack = [];
 let isApplyingHistory = false;
-let loupeOverlayVisible = false;
 let captionColorHistoryAnchor = null;
 let captionPaddingHistoryAnchor = null;
 let backgroundColorHistoryAnchor = null;
@@ -226,11 +224,6 @@ function setVisualLoading(isLoading) {
 function syncStageForDevice() {
   const device = activeSet()?.device;
   elements.stage.classList.toggle("device-ipad", device === "ipad");
-}
-
-function hideLoupeOverlay() {
-  loupeOverlayVisible = false;
-  elements.loupePreview.style.display = "none";
 }
 
 function unique(values) {
@@ -598,8 +591,6 @@ async function applySnapshot(snapshot) {
     elements.loupeEnabled.checked = Boolean(snapshot.loupe);
     syncControlsFromLoupe();
     syncLoupeSectionEnabled();
-    loupeOverlayVisible = Boolean(snapshot.loupe);
-    updateLoupePreview();
 
     const crossLocaleLoupeChange = Boolean(snapshot.loupeLocalesRestore || snapshot.loupePasteAllLocales);
     await previewSlide({
@@ -774,8 +765,8 @@ function scheduleSlidePreview(options = {}) {
     applyOptimisticCaptionText();
   }
 
-  window.clearTimeout(loupePreviewTimer);
-  loupePreviewTimer = null;
+  window.clearTimeout(loupeRenderTimer);
+  loupeRenderTimer = null;
 
   scheduleSlidePreview.pendingOptions = mergeScheduledPreviewOptions(
     scheduleSlidePreview.pendingOptions,
@@ -802,10 +793,8 @@ function scheduleLoupePreview() {
     return;
   }
 
-  loupeOverlayVisible = true;
-  updateLoupePreview();
-  window.clearTimeout(loupePreviewTimer);
-  loupePreviewTimer = window.setTimeout(() => {
+  window.clearTimeout(loupeRenderTimer);
+  loupeRenderTimer = window.setTimeout(() => {
     enqueuePreviewSlide({ recordHistory: false }).catch((error) => showToast(error.message));
   }, PREVIEW_DEBOUNCE_MS);
 }
@@ -847,7 +836,6 @@ async function previewSlide(options = {}) {
     updateURLSelection(activeSet());
     const refreshedSlide = activeSet().slides.find((candidate) => candidate.id === activeSlideId) || activeSet().slides[0];
     if (refreshedSlide) {
-      hideLoupeOverlay();
       elements.slideImage.src = cacheBustedImageUrl(refreshedSlide.imageUrl);
       elements.captionLabel.textContent = refreshedSlide.caption;
       elements.captionText.value = refreshedSlide.caption;
@@ -1010,7 +998,6 @@ function selectSlide(slideId) {
   activeSlideId = slideId;
   const slide = activeSlide();
   draftLoupe = slide.loupe ? normalizeDraftLoupe(structuredClone(slide.loupe)) : defaultLoupe();
-  hideLoupeOverlay();
 
   elements.slideIdLabel.textContent = slide.id;
   elements.captionLabel.textContent = slide.caption;
@@ -1108,60 +1095,6 @@ function updateEditableState() {
   syncLoupeSectionEnabled();
   updateLoupeClipboardButtons();
   updateHistoryButtons();
-}
-
-function renderedScale() {
-  const rect = elements.slideImage.getBoundingClientRect();
-  const set = activeSet();
-  const canvas = set.canvas || {
-    width: elements.slideImage.naturalWidth || rect.width,
-    height: elements.slideImage.naturalHeight || rect.height
-  };
-  return {
-    x: rect.width / canvas.width,
-    y: rect.height / canvas.height,
-    rect,
-    canvas
-  };
-}
-
-function updateLoupePreview() {
-  if (!state || !activeSet()?.editable || !activeSlideId || !elements.slideImage.complete || !loupeOverlayVisible) {
-    elements.loupePreview.style.display = "none";
-    return;
-  }
-
-  updateLoupeFromControls();
-  const scale = renderedScale();
-  const imageScale = Math.min(scale.x, scale.y);
-  const width = draftLoupe.width * scale.x;
-  const height = draftLoupe.height * scale.y;
-  const cornerRadius = (draftLoupe.cornerRadius ?? 48) * Math.min(scale.x, scale.y);
-  const borderWidth = (draftLoupe.borderWidth ?? 0) * Math.min(scale.x, scale.y);
-  const center = {
-    x: draftLoupe.center.x * scale.x,
-    y: draftLoupe.center.y * scale.y
-  };
-  const source = {
-    x: draftLoupe.sourceCenter.x * imageScale,
-    y: draftLoupe.sourceCenter.y * imageScale
-  };
-
-  elements.loupePreview.style.display = draftLoupe.enabled ? "block" : "none";
-
-  if (!draftLoupe.enabled) {
-    return;
-  }
-
-  elements.loupePreview.style.left = `${center.x - (width / 2)}px`;
-  elements.loupePreview.style.top = `${center.y - (height / 2)}px`;
-  elements.loupePreview.style.width = `${width}px`;
-  elements.loupePreview.style.height = `${height}px`;
-  elements.loupePreview.style.borderRadius = `${cornerRadius}px`;
-  elements.loupePreview.style.border = borderWidth > 0 ? `${borderWidth}px solid ${draftLoupe.borderColor || "#000000"}` : "0";
-  elements.loupePreview.style.backgroundImage = `url("${elements.slideImage.src}")`;
-  elements.loupePreview.style.backgroundSize = `${scale.canvas.width * imageScale * draftLoupe.zoom}px ${scale.canvas.height * imageScale * draftLoupe.zoom}px`;
-  elements.loupePreview.style.backgroundPosition = `${(width / 2) - (source.x * draftLoupe.zoom)}px ${(height / 2) - (source.y * draftLoupe.zoom)}px`;
 }
 
 function preferredTheme() {
@@ -1551,9 +1484,7 @@ elements.slideList.addEventListener("drop", (event) => {
 
 elements.slideImage.addEventListener("load", () => {
   setVisualLoading(false);
-  updateLoupePreview();
 });
-window.addEventListener("resize", updateLoupePreview);
 
 elements.backgroundColor.addEventListener("focus", () => {
   backgroundColorHistoryAnchor = currentSnapshot();

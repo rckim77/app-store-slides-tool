@@ -573,16 +573,6 @@ h2 {
   max-height: calc((100vh - 160px) * 1.43);
 }
 
-.loupe-preview {
-  background-repeat: no-repeat;
-  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
-  box-sizing: border-box;
-  display: none;
-  overflow: hidden;
-  pointer-events: none;
-  position: absolute;
-}
-
 .controls {
   display: grid;
   gap: 16px;

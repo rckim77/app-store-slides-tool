@@ -38,7 +38,7 @@ Scripts/render.sh --config /path/to/config.json --device ipad --locale en_US
 Rendered slides are written to the `outputRoot` path in the config, for example:
 
 ```text
-/path/to/your-app/build/AppStore/v1.11.0/en_US/iphone/
+/path/to/your-app/build/AppStore/v1.11.0/iphone/en_US/
 ```
 
 ## What it renders
@@ -120,7 +120,7 @@ At the top level, configure:
 Generated slides are written as:
 
 ```text
-<outputRoot>/<Version>/<Locale>/<Device>/
+<outputRoot>/<Version>/<Device>/<Locale>/
 ```
 
 Frame assets live under `Assets/Frames/` in this repo.

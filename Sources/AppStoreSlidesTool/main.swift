@@ -565,8 +565,8 @@ func renderSlide(
 
     let localeOutput = outputRoot
         .appendingPathComponent(outputVersion)
-        .appendingPathComponent(locale)
         .appendingPathComponent(deviceName)
+        .appendingPathComponent(locale)
     try FileManager.default.createDirectory(at: localeOutput, withIntermediateDirectories: true)
 
     let outputURL = localeOutput.appendingPathComponent("\(slide.id).png")

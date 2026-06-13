@@ -1091,8 +1091,8 @@ function updateEditableState() {
   elements.saveSlideButton.disabled = !editable;
   elements.gallerySaveAllButton.disabled = !editable;
   elements.contextLabel.textContent = editable
-    ? `${activeSet().version} / ${activeSet().locale} / ${activeSet().device} · edits save to ${activeSet().configPath}`
-    : `${activeSet().version} / ${activeSet().locale} / ${activeSet().device} · read-only ${activeSet().sourceLabel}`;
+    ? `${activeSet().version} / ${activeSet().device} / ${activeSet().locale} · edits save to ${activeSet().configPath}`
+    : `${activeSet().version} / ${activeSet().device} / ${activeSet().locale} · read-only ${activeSet().sourceLabel}`;
 
   elements.controls.querySelectorAll("input, button, textarea").forEach((control) => {
     control.disabled = !editable;

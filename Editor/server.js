@@ -172,7 +172,7 @@ function scanRoots(config, configPath = primaryConfigPath()) {
 }
 
 function outputDirectory(config, version, locale, deviceName) {
-  return path.join(outputRoot(config), version, locale, deviceName);
+  return path.join(outputRoot(config), version, deviceName, locale);
 }
 
 function renderedFile(config, slideId, version, locale, deviceName) {
@@ -361,13 +361,17 @@ function generatedSlideSets(config, configPath, includeReadOnlyLocales) {
       if (!isDirectory(versionDir)) {
         continue;
       }
-      for (const locale of fs.readdirSync(versionDir).filter((name) => isDirectory(path.join(versionDir, name))).sort()) {
-        if (!includeReadOnlyLocales && !configHasLocale(config, locale)) {
+      const configuredDevices = new Set(Object.keys(config.devices || {}));
+      for (const deviceName of fs.readdirSync(versionDir).filter((name) => isDirectory(path.join(versionDir, name))).sort()) {
+        if (!configuredDevices.has(deviceName)) {
           continue;
         }
-        const localeDir = path.join(versionDir, locale);
-        for (const deviceName of fs.readdirSync(localeDir).filter((name) => isDirectory(path.join(localeDir, name))).sort()) {
-          const deviceDir = path.join(localeDir, deviceName);
+        const deviceTypeDir = path.join(versionDir, deviceName);
+        for (const locale of fs.readdirSync(deviceTypeDir).filter((name) => isDirectory(path.join(deviceTypeDir, name))).sort()) {
+          if (!includeReadOnlyLocales && !configHasLocale(config, locale)) {
+            continue;
+          }
+          const deviceDir = path.join(deviceTypeDir, locale);
           const slides = slidesForDeviceDir(config, deviceDir, locale);
 
           if (slides.length === 0) {

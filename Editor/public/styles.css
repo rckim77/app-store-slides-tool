@@ -550,8 +550,8 @@ h2 {
 }
 
 .stage.device-ipad {
-  max-height: calc((100vh - 160px) * 1.15);
-  max-width: min(100%, 713px);
+  max-height: calc((100vh - 160px) * 1.43);
+  max-width: min(100%, 882px);
 }
 
 .stage.is-loading {
@@ -570,7 +570,7 @@ h2 {
 }
 
 .stage.device-ipad img {
-  max-height: calc((100vh - 160px) * 1.15);
+  max-height: calc((100vh - 160px) * 1.43);
 }
 
 .loupe-preview {

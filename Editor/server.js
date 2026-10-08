@@ -141,6 +141,10 @@ function writeConfig(config, configPath = primaryConfigPath()) {
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
+function cloneJSON(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
 function resolveFromConfig(configPath, value) {
   if (path.isAbsolute(value)) {
     return path.normalize(value);
@@ -220,7 +224,14 @@ function editorURL() {
   return url.toString();
 }
 
-function slideEntry(config, configuredSlide, locale, filePath) {
+function slideLoupeForDevice(slide, deviceName) {
+  if (slide.loupes && typeof slide.loupes === "object" && !Array.isArray(slide.loupes)) {
+    return slide.loupes[deviceName] || null;
+  }
+  return slide.loupe || null;
+}
+
+function slideEntry(config, configuredSlide, locale, filePath, deviceName) {
   return {
     id: configuredSlide.id,
     caption: slideCaption(config, configuredSlide, locale),
@@ -229,11 +240,11 @@ function slideEntry(config, configuredSlide, locale, filePath) {
     imagePath: filePath,
     backgroundColor: configuredSlide.backgroundColor || config.background.color,
     usesDefaultBackground: !configuredSlide.backgroundColor,
-    loupe: configuredSlide.loupe || null
+    loupe: slideLoupeForDevice(configuredSlide, deviceName)
   };
 }
 
-function slidesForDeviceDir(config, deviceDir, locale) {
+function slidesForDeviceDir(config, deviceDir, locale, deviceName) {
   const slides = [];
   const seen = new Set();
 
@@ -242,7 +253,7 @@ function slidesForDeviceDir(config, deviceDir, locale) {
     if (!isFile(filePath)) {
       continue;
     }
-    slides.push(slideEntry(config, configuredSlide, locale, filePath));
+    slides.push(slideEntry(config, configuredSlide, locale, filePath, deviceName));
     seen.add(configuredSlide.id);
   }
 
@@ -372,7 +383,7 @@ function generatedSlideSets(config, configPath, includeReadOnlyLocales) {
             continue;
           }
           const deviceDir = path.join(deviceTypeDir, locale);
-          const slides = slidesForDeviceDir(config, deviceDir, locale);
+          const slides = slidesForDeviceDir(config, deviceDir, locale, deviceName);
 
           if (slides.length === 0) {
             continue;
@@ -864,27 +875,74 @@ function previewRefreshScope({
 }
 
 function applyLoupeToSlide(slide, loupe, deviceName, config) {
-  if (loupe) {
-    slide.loupe = sanitizeLoupe(loupe, loupeReferenceCanvas(config, deviceName), deviceName);
-  } else {
+  if (!slide.loupes || typeof slide.loupes !== "object" || Array.isArray(slide.loupes)) {
+    slide.loupes = {};
+  }
+
+  if (slide.loupe) {
+    for (const configuredDeviceName of Object.keys(config.devices || {})) {
+      if (!Object.prototype.hasOwnProperty.call(slide.loupes, configuredDeviceName)) {
+        slide.loupes[configuredDeviceName] = cloneJSON(slide.loupe);
+      }
+    }
     delete slide.loupe;
+  }
+
+  if (loupe) {
+    slide.loupes[deviceName] = sanitizeLoupe(loupe, loupeReferenceCanvas(config, deviceName), deviceName);
+  } else {
+    delete slide.loupes[deviceName];
+  }
+
+  if (Object.keys(slide.loupes).length === 0) {
+    delete slide.loupes;
   }
 }
 
 function repairStoredLoupeCenters(config) {
-  const referenceCanvas = config.devices.iphone?.canvas;
-  if (!referenceCanvas) {
-    return false;
-  }
-
   let changed = false;
   for (const slide of config.slides) {
-    if (!slide.loupe) {
+    const before = JSON.stringify({
+      loupe: slide.loupe || null,
+      loupes: slide.loupes || null
+    });
+
+    if (slide.loupe) {
+      if (!slide.loupes || typeof slide.loupes !== "object" || Array.isArray(slide.loupes)) {
+        slide.loupes = {};
+      }
+      for (const deviceName of Object.keys(config.devices || {})) {
+        if (!Object.prototype.hasOwnProperty.call(slide.loupes, deviceName)) {
+          slide.loupes[deviceName] = cloneJSON(slide.loupe);
+        }
+      }
+      delete slide.loupe;
+    }
+
+    if (!slide.loupes || typeof slide.loupes !== "object" || Array.isArray(slide.loupes)) {
       continue;
     }
-    const repaired = sanitizeLoupe(slide.loupe, referenceCanvas, "iphone");
-    if (JSON.stringify(repaired) !== JSON.stringify(slide.loupe)) {
-      slide.loupe = repaired;
+
+    for (const [deviceName, loupe] of Object.entries(slide.loupes)) {
+      if (!loupe) {
+        delete slide.loupes[deviceName];
+        continue;
+      }
+      if (!config.devices?.[deviceName]) {
+        continue;
+      }
+      slide.loupes[deviceName] = sanitizeLoupe(loupe, loupeReferenceCanvas(config, deviceName), deviceName);
+    }
+
+    if (Object.keys(slide.loupes).length === 0) {
+      delete slide.loupes;
+    }
+
+    const after = JSON.stringify({
+      loupe: slide.loupe || null,
+      loupes: slide.loupes || null
+    });
+    if (before !== after) {
       changed = true;
     }
   }
@@ -913,11 +971,7 @@ function applyLoupeForSlideAcrossLocales(targetSet, slideId, localeLoupeMap) {
     }
 
     const loupe = localeLoupeMap[locale];
-    if (loupe) {
-      applyLoupeToSlide(slide, loupe, deviceName, config);
-    } else {
-      delete slide.loupe;
-    }
+    applyLoupeToSlide(slide, loupe, deviceName, config);
 
     writeConfig(config, configPath);
     renderSlides(config, deviceName, locale, slideId, configPath, outputVersion);
@@ -1166,6 +1220,8 @@ function saveAllSlides(payload) {
     renderAllSlidesForBackgroundColor(targetSet.version);
   } else if (captionPaddingChanged) {
     renderAllSlidesForCaptionPadding(targetSet.version);
+  } else if (loupeChanged && payload.slideId) {
+    renderSlides(config, targetSet.device, targetSet.locale, payload.slideId, targetSet.configPath, targetSet.version);
   } else {
     renderSlides(config, "all", targetSet.locale, null, targetSet.configPath, targetSet.version);
   }

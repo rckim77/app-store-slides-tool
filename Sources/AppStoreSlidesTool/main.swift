@@ -82,6 +82,14 @@ struct Slide: Decodable {
     let captions: [String: String]
     let backgroundColor: String?
     let loupe: LoupeConfig?
+    let loupes: [String: LoupeConfig]?
+
+    func loupe(for deviceName: String) -> LoupeConfig? {
+        if let loupes {
+            return loupes[deviceName]
+        }
+        return loupe
+    }
 }
 
 enum ToolError: Error, CustomStringConvertible {
@@ -551,7 +559,7 @@ func renderSlide(
         configBaseURL: configBaseURL
     )
     let output: NSImage
-    if let loupe = slide.loupe {
+    if let loupe = slide.loupe(for: deviceName) {
         output = try renderLoupe(
             baseImage: baseSlide,
             loupe: loupe,

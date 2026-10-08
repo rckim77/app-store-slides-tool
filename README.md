@@ -93,7 +93,7 @@ Then open:
 http://127.0.0.1:4321/?device=iphone&version=v1.11.0&locale=en_US
 ```
 
-The editor renders the current slide set on startup (use `--no-render` to skip when PNGs are already on disk), lets you pick a slide, change caption padding and loupe settings, and save. **Caption text color**, **slide color**, and **caption padding** in the sidebar apply across every slide and locale. Slide reordering also applies across every locale config. Loupe settings can be copied and pasted across slides (same device type); use **Paste to all locales** to apply the current slide’s loupe to that slide ID in every locale config. Saving updates the locale config JSON and rerenders the output PNGs for the selected editor version.
+The editor renders the current slide set on startup (use `--no-render` to skip when PNGs are already on disk), lets you pick a slide, change caption padding and loupe settings, and save. **Caption text color**, **slide color**, and **caption padding** in the sidebar apply across every slide and locale. Slide reordering also applies across every locale config. Loupe settings are stored per slide and per device, so editing an iPhone loupe does not change the iPad loupe for that slide. Loupe settings can be copied and pasted across slides on the same device type; use **Paste to all locales** to apply the current slide’s loupe to that slide ID in every locale config for the active device. Saving updates the locale config JSON and rerenders the output PNGs for the selected editor version.
 
 Generated folders are editable when the selected images belong to one of the loaded configs' current `version`, device, output root, and locale. Other discovered folders are shown read-only.
 

@@ -11,7 +11,7 @@ evaluate(`
   globalThis.fixture = {
     version: 'test', defaultLocale: 'en_US', background: {color:'#FFFFFF'},
     caption: {}, devices: {iphone:{}, ipad:{}},
-    slides: [{id:'first', screenshot:'first.png', captions:{en_US:'First'}}, {id:'second', captions:{en_US:'Second'}}]
+    slides: [{id:'first', screenshot:'first.png', captions:{en_US:'First'}, layoutOffsets:{ipad:{captionY:14,frameY:-30}}}, {id:'second', captions:{en_US:'Second'}}]
   };
   globalThis.renders = [];
   allSlideSets = () => ['iphone', 'ipad'].map(device => ({id:device,device,editable:true,version:'test',locale:'en_US',configPath:'fixture'}));
@@ -39,6 +39,7 @@ assert.equal(position("ipad"), "bottom");
 assert.equal(evaluate("fixture.slides[1].captionPositions"), undefined, "Save all must preserve other slide layouts");
 evaluate("updateSlide('first', {setId:'iphone',captionText:'Updated'})");
 assert.equal(position("ipad"), "bottom", "Old clients omitting position must preserve existing choices");
+assert.equal(evaluate("JSON.stringify(fixture.slides[0].layoutOffsets)"), JSON.stringify({ipad:{captionY:14,frameY:-30}}), "Preview and saving must preserve layout offsets");
 const before = evaluate("JSON.stringify(fixture)");
 for (const call of ["previewCaption({setId:'iphone',slideId:'first',captionPosition:'left'})", "updateSlide('first',{setId:'iphone',captionPosition:null})", "saveAllSlides({setId:'ipad',slideId:'first',captionPosition:1})"]) {
   assert.throws(() => evaluate(call), /captionPosition must be top or bottom/);

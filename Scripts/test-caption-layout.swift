@@ -105,6 +105,29 @@ verify(mixed["iphone"]!, bottom: true, cropped: true)
 let allBottom = try render(["iphone": "bottom", "ipad": "bottom"])
 check(allBottom["iphone"] == mixed["iphone"], "Editing iPad must preserve iPhone output")
 verify(allBottom["ipad"]!, bottom: true, cropped: true)
+func coloredMinY(_ data: Data, blue: Bool) -> Int {
+    let bitmap = NSBitmapImageRep(data: data)!.converting(to: .sRGB, renderingIntent: .default)!
+    for y in 0..<bitmap.pixelsHigh {
+        for x in 0..<bitmap.pixelsWide {
+            var pixel = [Int](repeating: 0, count: bitmap.samplesPerPixel)
+            bitmap.getPixel(&pixel, atX: x, y: y)
+            if blue ? (pixel[2] > 204 && pixel[0] < 90 && pixel[1] < 90)
+                    : (pixel[1] > 204 && pixel[0] < 51 && pixel[2] < 51) { return y }
+        }
+    }
+    return -1
+}
+var offsetSlide = (config["slides"] as! [[String: Any]])[0]
+offsetSlide["layoutOffsets"] = ["ipad": ["captionY": 14, "frameY": -30]]
+config["slides"] = [offsetSlide]
+let adjusted = try render(nil)
+check(adjusted["iphone"] == legacy["iphone"], "iPad offsets must preserve iPhone output")
+check(coloredMinY(adjusted["ipad"]!, blue: true) == coloredMinY(legacy["ipad"]!, blue: true) + 14,
+      "Caption must move down by its configured pixel offset")
+check(coloredMinY(adjusted["ipad"]!, blue: false) == coloredMinY(legacy["ipad"]!, blue: false) - 30,
+      "Frame must move up by its configured pixel offset")
+offsetSlide.removeValue(forKey: "layoutOffsets")
+config["slides"] = [offsetSlide]
 _ = try render(["iphone": "left"], valid: false)
 var namedCaption = config["caption"] as! [String: Any]
 namedCaption["fontName"] = "ArialRoundedMTBold"

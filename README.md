@@ -150,6 +150,14 @@ Omitted devices use `top`. The renderer accepts only `top` and `bottom`. The exi
 frame inset from that same edge. Bottom mirrors the screenshot placement without
 flipping the screenshot or the order of caption lines.
 
+For precise alignment with existing artwork, a slide can optionally set
+`layoutOffsets`, such as `"layoutOffsets": { "ipad": { "captionY": 14, "frameY": -30 } }`.
+Offsets are measured in output canvas pixels: positive values move down and
+negative values move up. Each offset defaults to zero, is independent per slide
+and device, and is added after the Top/Bottom placement. Configure these values
+in JSON; the editor preserves them when saving. Large offsets can crop content
+or bring the caption and screenshot closer together.
+
 ## Regression checks
 
 After `swift build`, run the editor checks and renderer pixel checks:

@@ -82,6 +82,11 @@ enum CaptionPosition: String, Decodable {
     case bottom
 }
 
+struct LayoutOffsetConfig: Decodable {
+    let captionY: CGFloat?
+    let frameY: CGFloat?
+}
+
 struct Slide: Decodable {
     let id: String
     let screenshot: String
@@ -90,6 +95,7 @@ struct Slide: Decodable {
     let loupe: LoupeConfig?
     let loupes: [String: LoupeConfig]?
     let captionPositions: [String: CaptionPosition]?
+    let layoutOffsets: [String: LayoutOffsetConfig]?
 
     func captionPosition(for deviceName: String) -> CaptionPosition {
         captionPositions?[deviceName] ?? .top
@@ -531,13 +537,14 @@ func renderBaseSlide(
     )
     let reservedCaptionHeight = max(device.frame.top, computedDeviceTop)
     let isBottomCaption = slide.captionPosition(for: deviceName) == .bottom
-    let captionTop = isBottomCaption
+    let offsets = slide.layoutOffsets?[deviceName]
+    let captionTop = (isBottomCaption
         ? canvasHeight - slideConfig.caption.topPadding - captionBlockHeight
-        : slideConfig.caption.topPadding
+        : slideConfig.caption.topPadding) + (offsets?.captionY ?? 0)
     // Mirror the frame placement, keeping its scale and allowing cropping at the top.
-    let deviceTop = isBottomCaption
+    let deviceTop = (isBottomCaption
         ? canvasHeight - reservedCaptionHeight - scaledFrameSize.height
-        : reservedCaptionHeight
+        : reservedCaptionHeight) + (offsets?.frameY ?? 0)
 
     return try bitmapImage(width: device.canvas.width, height: device.canvas.height) {
         backgroundColor.setFill()

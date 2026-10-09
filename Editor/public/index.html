@@ -47,7 +47,7 @@
           <div class="nav-section global-settings global-caption-padding">
             <p class="nav-label">Caption</p>
             <div class="stepper-field">
-              <span>Top padding</span>
+              <span>Outer padding</span>
               <div class="stepper">
                 <button class="stepper-button" data-step="-2" data-target="captionTopPadding" type="button">−</button>
                 <input id="captionTopPadding" type="number" min="0" max="360" step="2">
@@ -55,7 +55,7 @@
               </div>
             </div>
             <div class="stepper-field">
-              <span>Bottom padding</span>
+              <span>Screenshot gap</span>
               <div class="stepper">
                 <button class="stepper-button" data-step="-2" data-target="captionBottomPadding" type="button">−</button>
                 <input id="captionBottomPadding" type="number" min="0" max="360" step="2">
@@ -118,6 +118,14 @@
                 <textarea id="captionText" rows="2" spellcheck="true"></textarea>
               </label>
               <p class="field-hint">Press Return for a second line.</p>
+              <label class="field">
+                <span>Caption position</span>
+                <select id="captionPosition">
+                  <option value="top">Top</option>
+                  <option value="bottom">Bottom</option>
+                </select>
+              </label>
+              <p class="field-hint">Applies to this slide on this device.</p>
             </fieldset>
 
             <fieldset class="loupe-fieldset" id="loupeFieldset">

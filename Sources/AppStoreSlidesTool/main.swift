@@ -76,6 +76,11 @@ struct LoupeConfig: Decodable {
     let shadowOffset: PointConfig?
 }
 
+enum CaptionPosition: String, Decodable {
+    case top
+    case bottom
+}
+
 struct Slide: Decodable {
     let id: String
     let screenshot: String
@@ -83,6 +88,11 @@ struct Slide: Decodable {
     let backgroundColor: String?
     let loupe: LoupeConfig?
     let loupes: [String: LoupeConfig]?
+    let captionPositions: [String: CaptionPosition]?
+
+    func captionPosition(for deviceName: String) -> CaptionPosition {
+        captionPositions?[deviceName] ?? .top
+    }
 
     func loupe(for deviceName: String) -> LoupeConfig? {
         if let loupes {
@@ -508,14 +518,26 @@ func renderBaseSlide(
     let computedDeviceTop = slideConfig.caption.topPadding
         + captionBlockHeight
         + (slideConfig.caption.bottomPadding ?? 0)
-    let deviceTop = max(device.frame.top, computedDeviceTop)
+    let scaledFrameSize = NSSize(
+        width: deviceImage.size.width * device.frame.scale,
+        height: deviceImage.size.height * device.frame.scale
+    )
+    let reservedCaptionHeight = max(device.frame.top, computedDeviceTop)
+    let isBottomCaption = slide.captionPosition(for: deviceName) == .bottom
+    let captionTop = isBottomCaption
+        ? canvasHeight - slideConfig.caption.topPadding - captionBlockHeight
+        : slideConfig.caption.topPadding
+    // Mirror the frame placement, keeping its scale and allowing cropping at the top.
+    let deviceTop = isBottomCaption
+        ? canvasHeight - reservedCaptionHeight - scaledFrameSize.height
+        : reservedCaptionHeight
 
     return try bitmapImage(width: device.canvas.width, height: device.canvas.height) {
         backgroundColor.setFill()
         NSRect(x: 0, y: 0, width: canvasWidth, height: canvasHeight).fill()
 
         for (index, line) in lines.enumerated() {
-            let top = slideConfig.caption.topPadding + (CGFloat(index) * lineHeight)
+            let top = captionTop + (CGFloat(index) * lineHeight)
             let descentPadding = ceil(slideConfig.caption.fontSize * 0.08)
             let rect = NSRect(
                 x: slideConfig.caption.horizontalPadding,
@@ -526,10 +548,6 @@ func renderBaseSlide(
             NSString(string: line).draw(with: rect, options: [.usesLineFragmentOrigin], attributes: attributes)
         }
 
-        let scaledFrameSize = NSSize(
-            width: deviceImage.size.width * device.frame.scale,
-            height: deviceImage.size.height * device.frame.scale
-        )
         let frameRect = NSRect(
             x: (canvasWidth - scaledFrameSize.width) / 2,
             y: canvasHeight - deviceTop - scaledFrameSize.height,

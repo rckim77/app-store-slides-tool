@@ -231,10 +231,21 @@ function slideLoupeForDevice(slide, deviceName) {
   return slide.loupe || null;
 }
 
+function applyCaptionPositionToSlide(slide, payload, deviceName) {
+  if (!Object.prototype.hasOwnProperty.call(payload, "captionPosition")) {
+    return;
+  }
+  if (payload.captionPosition !== "top" && payload.captionPosition !== "bottom") {
+    throw new Error("captionPosition must be top or bottom");
+  }
+  slide.captionPositions = { ...slide.captionPositions, [deviceName]: payload.captionPosition };
+}
+
 function slideEntry(config, configuredSlide, locale, filePath, deviceName) {
   return {
     id: configuredSlide.id,
     caption: slideCaption(config, configuredSlide, locale),
+    captionPosition: configuredSlide.captionPositions?.[deviceName] || "top",
     filename: path.basename(filePath),
     imageUrl: imageURLFor(filePath),
     imagePath: filePath,
@@ -1078,6 +1089,7 @@ function previewCaption(payload) {
       throw new Error(`Unknown editable slide '${payload.slideId}'`);
     }
 
+    applyCaptionPositionToSlide(slide, payload, targetSet.device);
     if (Object.prototype.hasOwnProperty.call(payload, "captionText")) {
       slide.captions[targetSet.locale] = sanitizeCaptionText(payload.captionText);
     }
@@ -1200,6 +1212,7 @@ function saveAllSlides(payload) {
       throw new Error(`Unknown editable slide '${payload.slideId}'`);
     }
 
+    applyCaptionPositionToSlide(slide, payload, targetSet.device);
     if (Object.prototype.hasOwnProperty.call(payload, "captionText")) {
       slide.captions[targetSet.locale] = sanitizeCaptionText(payload.captionText);
     }
@@ -1281,6 +1294,7 @@ function updateSlide(slideId, payload) {
     captionPaddingChanged = previousPadding !== JSON.stringify(config.caption);
   }
 
+  applyCaptionPositionToSlide(slide, payload, targetSet.device);
   if (Object.prototype.hasOwnProperty.call(payload, "captionText")) {
     slide.captions[targetSet.locale] = sanitizeCaptionText(payload.captionText);
   }

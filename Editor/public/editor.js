@@ -15,6 +15,7 @@ const elements = {
   captionHorizontalPadding: document.getElementById("captionHorizontalPadding"),
   captionColor: document.getElementById("captionColor"),
   captionText: document.getElementById("captionText"),
+  captionPosition: document.getElementById("captionPosition"),
   backgroundColor: document.getElementById("backgroundColor"),
   loupeFieldset: document.getElementById("loupeFieldset"),
   loupeControls: document.getElementById("loupeControls"),
@@ -450,6 +451,7 @@ function currentSnapshot() {
     captionColor: globalCaptionColorValue(),
     backgroundColor: globalBackgroundColorValue(),
     captionText: elements.captionText.value,
+    captionPosition: elements.captionPosition.value,
     loupe: draftLoupe.enabled ? cloneLoupe(draftLoupe) : null
   };
 }
@@ -585,6 +587,7 @@ async function applySnapshot(snapshot) {
     elements.captionHorizontalPadding.value = String(snapshot.caption.horizontalPadding);
     elements.captionColor.value = snapshot.captionColor || DEFAULT_CAPTION_COLOR;
     elements.captionText.value = snapshot.captionText;
+    elements.captionPosition.value = snapshot.captionPosition || "top";
     elements.backgroundColor.value = snapshot.backgroundColor;
     elements.stage.style.background = snapshot.backgroundColor;
     draftLoupe = snapshot.loupe ? cloneLoupe(snapshot.loupe) : defaultLoupe();
@@ -704,6 +707,7 @@ function slidePreviewPayload(options = {}) {
     captionColor: globalCaptionColorValue(),
     backgroundColor: globalBackgroundColorValue(),
     captionText: elements.captionText.value,
+    captionPosition: elements.captionPosition.value,
     loupe: draftLoupe.enabled ? draftLoupe : null,
     refreshAllSlides: Boolean(options.refreshAllSlides)
   };
@@ -839,6 +843,7 @@ async function previewSlide(options = {}) {
       elements.slideImage.src = cacheBustedImageUrl(refreshedSlide.imageUrl);
       elements.captionLabel.textContent = refreshedSlide.caption;
       elements.captionText.value = refreshedSlide.caption;
+      elements.captionPosition.value = refreshedSlide.captionPosition || "top";
     }
     renderSlideList();
     if (!elements.galleryOverlay.hidden) {
@@ -1002,6 +1007,7 @@ function selectSlide(slideId) {
   elements.slideIdLabel.textContent = slide.id;
   elements.captionLabel.textContent = slide.caption;
   elements.captionText.value = slide.caption;
+  elements.captionPosition.value = slide.captionPosition || "top";
   const nextImageUrl = new URL(slide.imageUrl, window.location.href).href;
   if (elements.slideImage.src !== nextImageUrl) {
     setVisualLoading(true);
@@ -1081,7 +1087,7 @@ function updateEditableState() {
     ? `${activeSet().version} / ${activeSet().device} / ${activeSet().locale} · edits save to ${activeSet().configPath}`
     : `${activeSet().version} / ${activeSet().device} / ${activeSet().locale} · read-only ${activeSet().sourceLabel}`;
 
-  elements.controls.querySelectorAll("input, button, textarea").forEach((control) => {
+  elements.controls.querySelectorAll("input, button, textarea, select").forEach((control) => {
     control.disabled = !editable;
   });
   elements.captionColor.disabled = !editable;
@@ -1143,7 +1149,8 @@ function savePayload() {
     loupe: draftLoupe.enabled ? draftLoupe : null,
     caption: captionPaddingValues(),
     captionColor: globalCaptionColorValue(),
-    captionText: elements.captionText.value
+    captionText: elements.captionText.value,
+    captionPosition: elements.captionPosition.value
   };
 }
 
@@ -1532,6 +1539,7 @@ captionFields.forEach((input) => {
   });
 });
 
+elements.captionPosition.addEventListener("change", () => scheduleSlidePreview());
 elements.captionText.addEventListener("input", () => scheduleSlidePreview({ optimisticCaption: true }));
 elements.captionText.addEventListener("change", () => scheduleSlidePreview({ optimisticCaption: true }));
 

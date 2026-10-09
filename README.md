@@ -48,6 +48,7 @@ Rendered slides are written to the `outputRoot` path in the config, for example:
 - Per-device frame images and screen rectangles
 - Solid background colors
 - Per-slide captions, localized by locale code
+- Per-slide, per-device caption position: top or bottom
 - Per-slide screenshot inputs
 
 ## Visual Editor
@@ -93,7 +94,9 @@ Then open:
 http://127.0.0.1:4321/?device=iphone&version=v1.11.0&locale=en_US
 ```
 
-The editor renders the current slide set on startup (use `--no-render` to skip when PNGs are already on disk), lets you pick a slide, change caption padding and loupe settings, and save. **Caption text color**, **slide color**, and **caption padding** in the sidebar apply across every slide and locale. Slide reordering also applies across every locale config. Loupe settings are stored per slide and per device, so editing an iPhone loupe does not change the iPad loupe for that slide. Loupe settings can be copied and pasted across slides on the same device type; use **Paste to all locales** to apply the current slide’s loupe to that slide ID in every locale config for the active device. Saving updates the locale config JSON and rerenders the output PNGs for the selected editor version.
+The editor renders the current slide set on startup (use `--no-render` to skip when PNGs are already on disk), lets you pick a slide, change caption padding and loupe settings, and save. **Caption text color**, **slide color**, and **caption padding** in the sidebar apply across every slide and locale. Slide reordering also applies across every locale config. Loupe settings are stored per slide and per device, so editing an iPhone loupe does not change the iPad loupe for that slide. Loupe settings can be copied and pasted across slides on the same device type; use **Paste to all locales** to apply the current slide’s loupe to that slide ID in every locale config for the active device. Choose **Top** or **Bottom** under **Caption position** to place the selected slide’s caption above or below its screenshot. The choice is independent for iPhone and iPad and saved in the current locale config. It supports live preview, undo/redo, **Save slide**, and **Save all**. Existing slides default to Top. **Outer padding** measures from the caption to the nearest canvas edge; **Screenshot gap** separates the caption from the device frame. Bottom keeps the frame scale and mirrors its placement, cropping the top of an oversized frame as needed.
+
+Saving updates the locale config JSON and rerenders the output PNGs for the selected editor version.
 
 Generated folders are editable when the selected images belong to one of the loaded configs' current `version`, device, output root, and locale. Other discovered folders are shown read-only.
 
@@ -124,3 +127,30 @@ Generated slides are written as:
 ```
 
 Frame assets live under `Assets/Frames/` in this repo.
+
+For independent caption placement, add `captionPositions` to a slide:
+
+```json
+{
+  "id": "01-hints",
+  "screenshot": "hints.png",
+  "captions": { "en_US": "AI-powered\nHints" },
+  "captionPositions": { "iphone": "bottom", "ipad": "top" }
+}
+```
+
+Omitted devices use `top`. The renderer accepts only `top` and `bottom`. The existing
+`caption.topPadding` becomes the outer margin for either position, while
+`caption.bottomPadding` remains the screenshot gap. `frame.top` sets the minimum
+frame inset from that same edge. Bottom mirrors the screenshot placement without
+flipping the screenshot or the order of caption lines.
+
+## Regression checks
+
+After `swift build`, run the editor checks and renderer pixel checks:
+
+```sh
+node Scripts/test-editor-loupes.js
+node Scripts/test-editor-caption-position.js
+xcrun swift Scripts/test-caption-layout.swift .build/debug/app-store-slides-tool
+```

@@ -667,6 +667,16 @@ legend {
   width: 100%;
 }
 
+.field select {
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  min-height: 40px;
+  padding: 0 12px;
+  width: 100%;
+}
+
 .field textarea {
   background: var(--panel-alt);
   border: 1px solid var(--border);

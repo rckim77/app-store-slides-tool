@@ -465,6 +465,9 @@ function matchingScreenshotRoots(config) {
 function archiveDeviceFor(filePath) {
   const name = path.basename(filePath).toLowerCase();
   const fullPath = filePath.toLowerCase();
+  if (/(?:iphone[-_ ]?duo)/.test(fullPath)) {
+    return "iphone-duo";
+  }
   if (name.includes("iphone") || (fullPath.includes("/raw/") && !name.includes("ipad"))) {
     return "iphone";
   }
@@ -658,6 +661,9 @@ function sanitizedPoint(value, fallback, canvas) {
 }
 
 function loupeReferenceCanvas(config, deviceName) {
+  if (deviceName === "iphone-duo") {
+    return config.devices[deviceName]?.canvas;
+  }
   return config.devices.iphone?.canvas || config.devices[deviceName]?.canvas;
 }
 
@@ -666,7 +672,7 @@ function sanitizeLoupe(value, referenceCanvas, deviceName = "iphone") {
     return null;
   }
 
-  // Loupe coordinates are stored in iPhone canvas space so one slide config works on both devices.
+  // Legacy iPhone/iPad loupes use iPhone canvas space; Duo uses its own canvas.
   const centerX = referenceCanvas.width / 2;
   const fallbackY = referenceCanvas.height * 0.55;
   const centerY = clampedNumber(value.center && value.center.y, fallbackY, 0, referenceCanvas.height);

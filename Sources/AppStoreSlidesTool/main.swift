@@ -19,6 +19,7 @@ struct BackgroundConfig: Decodable {
 struct CaptionConfig: Decodable {
     let fontSize: CGFloat
     let fontWeight: String?
+    let fontName: String?
     let color: String
     let topPadding: CGFloat
     let bottomPadding: CGFloat?
@@ -253,7 +254,13 @@ func nsColor(hex: String) throws -> NSColor {
     return NSColor(calibratedRed: red, green: green, blue: blue, alpha: 1)
 }
 
-func font(for caption: CaptionConfig) -> NSFont {
+func font(for caption: CaptionConfig) throws -> NSFont {
+    if let name = caption.fontName {
+        guard let font = NSFont(name: name, size: caption.fontSize) else {
+            throw ToolError.invalidConfig("Caption font '\(name)' is not installed")
+        }
+        return font
+    }
     let weight: NSFont.Weight
     switch caption.fontWeight?.lowercased() {
     case "black", "heavy":
@@ -495,7 +502,7 @@ func renderBaseSlide(
 
     let backgroundColor = try nsColor(hex: slide.backgroundColor ?? slideConfig.background.color)
     let captionColor = try nsColor(hex: slideConfig.caption.color)
-    let captionFont = font(for: slideConfig.caption)
+    let captionFont = try font(for: slideConfig.caption)
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = .center
 
@@ -614,6 +621,7 @@ func run() throws {
     let configBaseURL = configURL.deletingLastPathComponent()
     let data = try Data(contentsOf: configURL)
     let slideConfig = try JSONDecoder().decode(SlideConfig.self, from: data)
+    _ = try font(for: slideConfig.caption)
     let locale = args.locale ?? slideConfig.defaultLocale
     let outputRoot = resolve(args.outputRootOverride ?? slideConfig.outputRoot, relativeTo: configBaseURL)
     let outputVersion = args.versionOverride ?? slideConfig.version

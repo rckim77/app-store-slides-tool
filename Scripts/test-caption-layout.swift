@@ -106,4 +106,13 @@ let allBottom = try render(["iphone": "bottom", "ipad": "bottom"])
 check(allBottom["iphone"] == mixed["iphone"], "Editing iPad must preserve iPhone output")
 verify(allBottom["ipad"]!, bottom: true, cropped: true)
 _ = try render(["iphone": "left"], valid: false)
+var namedCaption = config["caption"] as! [String: Any]
+namedCaption["fontName"] = "ArialRoundedMTBold"
+config["caption"] = namedCaption
+let rounded = try render(["iphone": "bottom", "ipad": "bottom"])
+check(rounded["iphone"] != allBottom["iphone"], "Named font must change rendered caption pixels")
+for data in rounded.values { verify(data, bottom: true, cropped: true) }
+namedCaption["fontName"] = "MissingAppStoreCaptionFont"
+config["caption"] = namedCaption
+_ = try render(nil, valid: false)
 print("Caption renderer regression checks passed")

@@ -128,6 +128,11 @@ Generated slides are written as:
 
 Frame assets live under `Assets/Frames/` in this repo.
 
+Set `caption.fontName` to an installed PostScript font name (for example,
+`ArialRoundedMTBold`) to match existing artwork. When omitted, captions retain
+the system font and `fontWeight`. A named font controls its own weight. Missing
+fonts produce a validation error instead of silently changing the design.
+
 For independent caption placement, add `captionPositions` to a slide:
 
 ```json

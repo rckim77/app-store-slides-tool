@@ -34,6 +34,8 @@ const elements = {
   galleryBody: document.getElementById("galleryBody"),
   galleryLocaleTabs: document.getElementById("galleryLocaleTabs"),
   galleryIphoneRow: document.getElementById("galleryIphoneRow"),
+  galleryDuoRow: document.getElementById("galleryDuoRow"),
+  galleryDuoZoomLabel: document.getElementById("galleryDuoZoomLabel"),
   galleryIpadRow: document.getElementById("galleryIpadRow"),
   galleryIphoneZoomLabel: document.getElementById("galleryIphoneZoomLabel"),
   galleryIpadZoomLabel: document.getElementById("galleryIpadZoomLabel"),
@@ -73,7 +75,8 @@ let captionPaddingHistoryAnchor = null;
 let backgroundColorHistoryAnchor = null;
 let galleryLocale = null;
 let gallerySaveStatusTimer = null;
-const galleryDeviceZoom = { iphone: 1, ipad: 1 };
+const deviceLabels = { iphone: "iPhone (Dynamic Island)", "iphone-duo": "iPhone Duo", ipad: "iPad" };
+const galleryDeviceZoom = { iphone: 1, "iphone-duo": 1, ipad: 1 };
 let copiedLoupeSettings = null;
 
 const PREVIEW_DEBOUNCE_MS = 16;
@@ -133,10 +136,14 @@ function canvasSize() {
   return activeSet().canvas || { width: 1290, height: 2796 };
 }
 
-function iphoneCanvasSize() {
+function loupeCanvasSize() {
   const set = activeSet();
   if (!set || !state) {
     return { width: 1290, height: 2796 };
+  }
+
+  if (set.device === "iphone-duo") {
+    return canvasSize();
   }
 
   const iphoneSet = state.sets.find((candidate) =>
@@ -162,7 +169,7 @@ function defaultLoupeZoom() {
 
 function defaultLoupe() {
   const canvas = canvasSize();
-  const loupeCanvas = iphoneCanvasSize();
+  const loupeCanvas = loupeCanvasSize();
   const width = Math.round(loupeCanvas.width);
   const height = defaultLoupeHeight(canvas);
   const cornerRadius = Math.min(96, Math.round(Math.min(width, height) * 0.42));
@@ -224,6 +231,8 @@ function setVisualLoading(isLoading) {
 function syncStageForDevice() {
   const device = activeSet()?.device;
   elements.stage.classList.toggle("device-ipad", device === "ipad");
+  const canvas = canvasSize();
+  elements.stage.classList.toggle("device-duo", device === "iphone-duo" && canvas.width > canvas.height);
 }
 
 function unique(values) {
@@ -258,8 +267,23 @@ function renderTabs(container, items, activeValue, onSelect) {
     button.type = "button";
     button.className = `tab-button${item.value === activeValue ? " selected" : ""}`;
     button.textContent = item.label;
+    button.disabled = Boolean(item.disabled);
+    if (item.title) button.title = item.title;
     button.addEventListener("click", () => onSelect(item.value));
     container.appendChild(button);
+  });
+}
+
+function localeTabsForSet(sets, set) {
+  const versionSets = sets.filter(candidate => candidate.version === set.version && candidate.source === set.source);
+  return sortLocales(versionSets.map(candidate => candidate.locale)).map(locale => {
+    const available = versionSets.some(candidate => candidate.device === set.device && candidate.locale === locale);
+    return {
+      value: locale,
+      label: available ? locale : `${locale} (N/A)`,
+      disabled: !available,
+      title: available ? "" : "Generate this device's localized screenshots and slides to enable this locale"
+    };
   });
 }
 
@@ -278,17 +302,18 @@ function renderVersionSelect() {
 
 function renderNavigation() {
   const set = activeSet();
-  const devices = unique(state.sets.map((candidate) => candidate.device)).sort((left, right) => {
-    const order = { iphone: 0, ipad: 1 };
+  const devices = unique([...Object.keys(deviceLabels), ...state.sets.map((candidate) => candidate.device)]).sort((left, right) => {
+    const order = { iphone: 0, "iphone-duo": 1, ipad: 2 };
     return (order[left] ?? 99) - (order[right] ?? 99);
   });
-  const locales = sortLocales(setsMatching({ device: set.device, version: set.version }).map((candidate) => candidate.locale));
+  const localeItems = localeTabsForSet(state.sets, set);
 
   renderTabs(
     elements.deviceTabs,
     devices.map((device) => ({
       value: device,
-      label: device === "iphone" ? "iPhone" : device === "ipad" ? "iPad" : device
+      label: deviceLabels[device] || device,
+      disabled: !state.sets.some((candidate) => candidate.device === device)
     })),
     set.device,
     (device) => setSelection({ device, version: null, locale: null })
@@ -296,7 +321,7 @@ function renderNavigation() {
   renderVersionSelect();
   renderTabs(
     elements.localeTabs,
-    locales.map((locale) => ({ value: locale, label: locale })),
+    localeItems,
     set.locale,
     (locale) => setSelection({ locale })
   );
@@ -858,7 +883,7 @@ async function previewSlide(options = {}) {
 
 function normalizeDraftLoupe(loupe) {
   const canvas = canvasSize();
-  const loupeCanvas = iphoneCanvasSize();
+  const loupeCanvas = loupeCanvasSize();
   const centerY = centeredLoupeY(loupe, canvas);
   const centerX = loupeCanvas.width / 2;
   return {
@@ -1023,7 +1048,7 @@ function selectSlide(slideId) {
 function syncControlsFromSet() {
   const set = activeSet();
   const canvas = canvasSize();
-  const loupeCanvas = iphoneCanvasSize();
+  const loupeCanvas = loupeCanvasSize();
   elements.loupeWidth.min = 120;
   elements.loupeWidth.max = Math.round(loupeCanvas.width);
   elements.loupeHeight.min = 0;
@@ -1058,7 +1083,7 @@ function updateLastSavedLabel(date = new Date()) {
 
 function updateLoupeFromControls() {
   const canvas = canvasSize();
-  const loupeCanvas = iphoneCanvasSize();
+  const loupeCanvas = loupeCanvasSize();
   const centerY = Number(elements.loupeCenterY.value);
   const centerX = loupeCanvas.width / 2;
   draftLoupe.enabled = elements.loupeEnabled.checked;
@@ -1168,16 +1193,19 @@ async function saveActiveSlide() {
 }
 
 function galleryRowForDevice(device) {
-  return device === "ipad" ? elements.galleryIpadRow : elements.galleryIphoneRow;
+  return { iphone: elements.galleryIphoneRow, "iphone-duo": elements.galleryDuoRow, ipad: elements.galleryIpadRow }[device];
 }
 
 function galleryZoomLabelForDevice(device) {
-  return device === "ipad" ? elements.galleryIpadZoomLabel : elements.galleryIphoneZoomLabel;
+  return { iphone: elements.galleryIphoneZoomLabel, "iphone-duo": elements.galleryDuoZoomLabel, ipad: elements.galleryIpadZoomLabel }[device];
 }
 
 function galleryDeviceFromRow(row) {
   if (!row) {
     return null;
+  }
+  if (row.classList.contains("gallery-row-duo")) {
+    return "iphone-duo";
   }
   if (row.classList.contains("gallery-row-ipad")) {
     return "ipad";
@@ -1203,6 +1231,7 @@ function setGalleryDeviceZoom(device, zoom) {
 
 function syncGalleryDeviceZoomStyles() {
   setGalleryDeviceZoom("iphone", galleryDeviceZoom.iphone);
+  setGalleryDeviceZoom("iphone-duo", galleryDeviceZoom["iphone-duo"]);
   setGalleryDeviceZoom("ipad", galleryDeviceZoom.ipad);
 }
 
@@ -1217,7 +1246,7 @@ function initGalleryScrollHandlers() {
     return;
   }
 
-  [elements.galleryIphoneRow, elements.galleryIpadRow].forEach((row) => {
+  [elements.galleryIphoneRow, elements.galleryDuoRow, elements.galleryIpadRow].forEach((row) => {
     row.addEventListener(
       "wheel",
       (event) => {
@@ -1340,6 +1369,7 @@ function renderGalleryContent() {
   }
   elements.galleryTitle.textContent = set.version;
   renderGalleryRow(elements.galleryIphoneRow, "iphone", galleryLocale);
+  renderGalleryRow(elements.galleryDuoRow, "iphone-duo", galleryLocale);
   renderGalleryRow(elements.galleryIpadRow, "ipad", galleryLocale);
 }
 

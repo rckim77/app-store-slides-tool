@@ -119,6 +119,7 @@ struct Arguments {
 
 let appStorePresets: [String: Set<String>] = [
     "iphone-6.9": ["1290x2796", "1320x2868", "2796x1290", "2868x1320"],
+    "iphone-duo": ["1398x2034", "2034x1398", "2007x2853", "2853x2007"],
     "ipad-13": ["2048x2732", "2064x2752", "2732x2048", "2752x2064"]
 ]
 
@@ -135,7 +136,7 @@ func parseArguments(_ raw: [String]) throws -> Arguments {
             arguments.configPath = raw[index]
         case "--device":
             index += 1
-            guard index < raw.count else { throw ToolError.usage("--device requires iphone, ipad, or all") }
+            guard index < raw.count else { throw ToolError.usage("--device requires iphone, iphone-duo, ipad, or all") }
             arguments.device = raw[index]
         case "--locale":
             index += 1
@@ -177,7 +178,7 @@ func printUsageAndExit() -> Never {
 
     Options:
       --config <path>       JSON configuration path
-      --device <name>       iphone, ipad, or all
+      --device <name>       iphone (Dynamic Island), iphone-duo, ipad, or all
       --locale <code>       caption locale, defaults to config defaultLocale
       --slide <id>          render a single slide id
       --output <path>       override output root
@@ -205,6 +206,9 @@ func resolve(_ path: String, relativeTo baseURL: URL) -> URL {
 }
 
 func validate(device name: String, config: DeviceConfig) throws {
+    if name == "iphone-duo", config.appStorePreset != "iphone-duo" {
+        throw ToolError.invalidConfig("iphone-duo requires the iphone-duo App Store preset")
+    }
     let key = "\(config.canvas.width)x\(config.canvas.height)"
     guard let allowed = appStorePresets[config.appStorePreset] else {
         throw ToolError.invalidConfig("Unknown App Store preset '\(config.appStorePreset)' for \(name)")
@@ -212,6 +216,14 @@ func validate(device name: String, config: DeviceConfig) throws {
     guard allowed.contains(key) else {
         let sizes = allowed.sorted().joined(separator: ", ")
         throw ToolError.invalidConfig("\(name) canvas \(key) is not valid for \(config.appStorePreset). Allowed: \(sizes)")
+    }
+    if name == "iphone-duo" {
+        let screenRatio = config.frame.screen.width / config.frame.screen.height
+        let canvasRatio = CGFloat(config.canvas.width) / CGFloat(config.canvas.height)
+        guard config.frame.screen.width > 0, config.frame.screen.height > 0,
+              screenRatio.isFinite, abs(screenRatio / canvasRatio - 1) < 0.01 else {
+            throw ToolError.invalidConfig("Duo frame screen must match the selected display and canvas orientation")
+        }
     }
 }
 
@@ -340,15 +352,24 @@ func bitmapImage(width: Int, height: Int, draw: () throws -> Void) throws -> NSI
 }
 
 func pngData(from image: NSImage) throws -> Data {
-    if let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first,
-       let data = bitmap.representation(using: .png, properties: [:]) {
-        return data
-    }
-
-    guard let tiffData = image.tiffRepresentation,
-          let bitmap = NSBitmapImageRep(data: tiffData),
-          let data = bitmap.representation(using: .png, properties: [:]) else {
+    // App Store Connect rejects an alpha channel even when every pixel is opaque.
+    // Keep transparency while composing bezels/loupes, then flatten only the export.
+    guard let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+          let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(
+            data: nil, width: source.width, height: source.height,
+            bitsPerComponent: 8, bytesPerRow: source.width * 4,
+            space: colorSpace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+          ) else {
         throw ToolError.renderFailed("Could not encode PNG")
+    }
+    let rect = CGRect(x: 0, y: 0, width: source.width, height: source.height)
+    context.setFillColor(NSColor.white.cgColor)
+    context.fill(rect)
+    context.draw(source, in: rect)
+    guard let opaque = context.makeImage(),
+          let data = NSBitmapImageRep(cgImage: opaque).representation(using: .png, properties: [:]) else {
+        throw ToolError.renderFailed("Could not encode opaque PNG")
     }
     return data
 }
@@ -631,6 +652,15 @@ func run() throws {
             let screenshotURL = screenshotRoot.appendingPathComponent(slide.screenshot)
             guard FileManager.default.fileExists(atPath: screenshotURL.path) else {
                 throw ToolError.missingFile("Missing screenshot for \(slide.id): \(screenshotURL.path)")
+            }
+            if deviceName == "iphone-duo" {
+                let screenshot = try image(at: screenshotURL)
+                let sourceRatio = screenshot.size.width / screenshot.size.height
+                let screenRatio = device.frame.screen.width / device.frame.screen.height
+                guard screenRatio.isFinite, screenRatio > 0,
+                      abs(sourceRatio / screenRatio - 1) < 0.01 else {
+                    throw ToolError.invalidConfig("\(slide.id): Duo screenshot aspect ratio must match the frame screen; use a native capture of the selected Duo display and orientation")
+                }
             }
         }
 

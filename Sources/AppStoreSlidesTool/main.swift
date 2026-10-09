@@ -19,6 +19,7 @@ struct BackgroundConfig: Decodable {
 struct CaptionConfig: Decodable {
     let fontSize: CGFloat
     let fontWeight: String?
+    let fontName: String?
     let color: String
     let topPadding: CGFloat
     let bottomPadding: CGFloat?
@@ -76,6 +77,16 @@ struct LoupeConfig: Decodable {
     let shadowOffset: PointConfig?
 }
 
+enum CaptionPosition: String, Decodable {
+    case top
+    case bottom
+}
+
+struct LayoutOffsetConfig: Decodable {
+    let captionY: CGFloat?
+    let frameY: CGFloat?
+}
+
 struct Slide: Decodable {
     let id: String
     let screenshot: String
@@ -83,6 +94,12 @@ struct Slide: Decodable {
     let backgroundColor: String?
     let loupe: LoupeConfig?
     let loupes: [String: LoupeConfig]?
+    let captionPositions: [String: CaptionPosition]?
+    let layoutOffsets: [String: LayoutOffsetConfig]?
+
+    func captionPosition(for deviceName: String) -> CaptionPosition {
+        captionPositions?[deviceName] ?? .top
+    }
 
     func loupe(for deviceName: String) -> LoupeConfig? {
         if let loupes {
@@ -243,7 +260,13 @@ func nsColor(hex: String) throws -> NSColor {
     return NSColor(calibratedRed: red, green: green, blue: blue, alpha: 1)
 }
 
-func font(for caption: CaptionConfig) -> NSFont {
+func font(for caption: CaptionConfig) throws -> NSFont {
+    if let name = caption.fontName {
+        guard let font = NSFont(name: name, size: caption.fontSize) else {
+            throw ToolError.invalidConfig("Caption font '\(name)' is not installed")
+        }
+        return font
+    }
     let weight: NSFont.Weight
     switch caption.fontWeight?.lowercased() {
     case "black", "heavy":
@@ -485,7 +508,7 @@ func renderBaseSlide(
 
     let backgroundColor = try nsColor(hex: slide.backgroundColor ?? slideConfig.background.color)
     let captionColor = try nsColor(hex: slideConfig.caption.color)
-    let captionFont = font(for: slideConfig.caption)
+    let captionFont = try font(for: slideConfig.caption)
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = .center
 
@@ -508,14 +531,27 @@ func renderBaseSlide(
     let computedDeviceTop = slideConfig.caption.topPadding
         + captionBlockHeight
         + (slideConfig.caption.bottomPadding ?? 0)
-    let deviceTop = max(device.frame.top, computedDeviceTop)
+    let scaledFrameSize = NSSize(
+        width: deviceImage.size.width * device.frame.scale,
+        height: deviceImage.size.height * device.frame.scale
+    )
+    let reservedCaptionHeight = max(device.frame.top, computedDeviceTop)
+    let isBottomCaption = slide.captionPosition(for: deviceName) == .bottom
+    let offsets = slide.layoutOffsets?[deviceName]
+    let captionTop = (isBottomCaption
+        ? canvasHeight - slideConfig.caption.topPadding - captionBlockHeight
+        : slideConfig.caption.topPadding) + (offsets?.captionY ?? 0)
+    // Mirror the frame placement, keeping its scale and allowing cropping at the top.
+    let deviceTop = (isBottomCaption
+        ? canvasHeight - reservedCaptionHeight - scaledFrameSize.height
+        : reservedCaptionHeight) + (offsets?.frameY ?? 0)
 
     return try bitmapImage(width: device.canvas.width, height: device.canvas.height) {
         backgroundColor.setFill()
         NSRect(x: 0, y: 0, width: canvasWidth, height: canvasHeight).fill()
 
         for (index, line) in lines.enumerated() {
-            let top = slideConfig.caption.topPadding + (CGFloat(index) * lineHeight)
+            let top = captionTop + (CGFloat(index) * lineHeight)
             let descentPadding = ceil(slideConfig.caption.fontSize * 0.08)
             let rect = NSRect(
                 x: slideConfig.caption.horizontalPadding,
@@ -526,10 +562,6 @@ func renderBaseSlide(
             NSString(string: line).draw(with: rect, options: [.usesLineFragmentOrigin], attributes: attributes)
         }
 
-        let scaledFrameSize = NSSize(
-            width: deviceImage.size.width * device.frame.scale,
-            height: deviceImage.size.height * device.frame.scale
-        )
         let frameRect = NSRect(
             x: (canvasWidth - scaledFrameSize.width) / 2,
             y: canvasHeight - deviceTop - scaledFrameSize.height,
@@ -596,6 +628,7 @@ func run() throws {
     let configBaseURL = configURL.deletingLastPathComponent()
     let data = try Data(contentsOf: configURL)
     let slideConfig = try JSONDecoder().decode(SlideConfig.self, from: data)
+    _ = try font(for: slideConfig.caption)
     let locale = args.locale ?? slideConfig.defaultLocale
     let outputRoot = resolve(args.outputRootOverride ?? slideConfig.outputRoot, relativeTo: configBaseURL)
     let outputVersion = args.versionOverride ?? slideConfig.version

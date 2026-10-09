@@ -19,7 +19,7 @@ swift build
 swift run app-store-slides-tool --list-specs
 ```
 
-Render slides from a JSON config (paths are yours—see **Configuration**):
+Import your local Apple bezels first (see **Local frame assets** below), then render slides from a JSON config (paths are yours—see **Configuration**):
 
 ```sh
 swift run app-store-slides-tool \
@@ -125,7 +125,23 @@ Generated slides are written as:
 <outputRoot>/<Version>/<Device>/<Locale>/
 ```
 
-Frame assets live under `Assets/Frames/` in this repo.
+Frame paths refer to local assets, usually under `Assets/Frames/`.
+
+## Local frame assets
+
+Apple-supplied iPhone, iPhone Duo, and iPad bezels and their licenses are **local-only**. They are not bundled with the current repository tree. Download the model, color, and orientation used by your config from [Apple Design Resources](https://developer.apple.com/design/resources/), accept the accompanying license yourself, and open or extract the resource. Import its complete folder, including the license:
+
+```sh
+node Scripts/import-frames.js --device iphone --source '/Volumes/<mounted iPhone bezel folder>'
+node Scripts/import-frames.js --device ipad --source '/Volumes/<mounted iPad bezel folder>'
+node Scripts/import-frames.js --device iphone-duo --source '/Volumes/<mounted Duo bezel folder>'
+```
+
+The helper preserves PNG filenames, copies the selected device's frames into `Assets/Frames/`, and keeps its supplied licenses under `Assets/Frames/Licenses/<device>/`. It validates missing licenses and ambiguous filenames before copying. The entire asset folder is Git-ignored except its [setup README](Assets/Frames/README.md). The original Duo import command remains supported.
+
+Existing configs referencing the local iPhone 17 Pro or iPad Pro 13-inch M4 filenames continue to work when those files are present. For other models, update the image path and screen geometry to match the downloaded frame. Fresh clones require a local import before rendering. Before pulling this removal into an older checkout, back up its tracked frame PNGs outside the checkout and restore them afterward; Git may remove them during the update. This change does not remove copies in older Git history.
+
+Read each download's applicable license before using it. Rendered mock-ups and marketing material remain subject to Apple's resource licenses and [marketing guidelines](https://developer.apple.com/app-store/marketing/guidelines/).
 
 ## iPhone Duo
 
@@ -137,13 +153,13 @@ Capture the app on the selected Duo display and match its orientation to the fra
 
 For **Inner Open Landscape**, explicitly select the inner display, landscape orientation, and a fully open **180° hinge angle** in Device Hub before capturing. Keep that pose for every slide. A partially folded inner display produces the same pixel dimensions, so the renderer's aspect-ratio check and App Store validation cannot detect the wrong pose. Verify the native UI and save a Device Hub pose reference with the capture evidence before rendering. Standard sheets should be centered in the fully open inner display; sheets shifted to one side can indicate fold avoidance. See Apple's [sheet and fold-avoidance guidance](https://developer.apple.com/videos/play/tech-talks/111466/?time=516).
 
-The tool uses local Night Sky frames from [Apple Design Resources](https://developer.apple.com/design/resources/). Download the **iPhone Duo bezels** from Apple, accept their license, and open the downloaded disk image. Import from its mounted folder:
+Duo uses local Night Sky frames imported as described under **Local frame assets**. The original command also works:
 
 ```sh
 node Scripts/import-duo-frames.js --source '/Volumes/<mounted Duo bezel folder>'
 ```
 
-The helper imports the four required PNGs and their license into `Assets/Frames/`. These licensed source assets are ignored by Git and are not redistributed in this repository. Apple's license restricts their use to mock-ups for software that runs only on Apple operating systems; recipients of rendered mock-ups must follow the license, including its restriction on extracting the template content. Read the imported license before using the resources.
+The helper requires all four Night Sky poses and an accompanying Apple license. As with iPhone and iPad, these source assets stay local. Apple's Design Resources license restricts their use to mock-ups for software that runs only on Apple operating systems; recipients of rendered mock-ups must follow the license, including its restriction on extracting the template content.
 
 Their screen rectangles (in frame pixels, measured from the top left) are:
 
@@ -154,7 +170,7 @@ Their screen rectangles (in frame pixels, measured from the top left) are:
 | Outer Closed Landscape | 80, 88 | 2034 × 1398 |
 | Outer Closed Portrait | 88, 80 | 1398 × 2034 |
 
-See your local `Assets/Frames/Apple-Design-Resources-License.rtf` for Apple's resource license.
+See your local `Assets/Frames/Licenses/iphone-duo/` for the imported licenses. The original `Assets/Frames/Apple-Design-Resources-License.rtf` path is also retained when the download supplies that RTF.
 
 Add the device to an existing config while preserving its other devices and slides:
 

@@ -9,6 +9,7 @@ try {
   fs.mkdirSync(path.join(temp, "Scripts"));
   const helper = path.join(temp, "Scripts/import-duo-frames.js");
   fs.copyFileSync(path.join(__dirname, "import-duo-frames.js"), helper);
+  fs.copyFileSync(path.join(__dirname, "import-frames.js"), path.join(temp, "Scripts/import-frames.js"));
   const source = path.join(temp, "Apple-bezels");
   fs.mkdirSync(path.join(source, "PNG"), {recursive: true});
   const frames = ["Inner Open Landscape", "Inner Open Portrait", "Outer Closed Landscape", "Outer Closed Portrait"]
@@ -18,7 +19,7 @@ try {
   const run = () => spawnSync(process.execPath, [helper, "--source", source], {encoding: "utf8"});
   let result = run();
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /Missing Apple-Design-Resources-License/);
+  assert.match(result.stderr, /Missing Apple license/);
   assert.ok(!fs.existsSync(destination), "Missing license must not produce a partial import");
   fs.writeFileSync(path.join(source, "Apple Design Resources License.rtf"), "synthetic license fixture");
   result = run();

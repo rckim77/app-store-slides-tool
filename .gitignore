@@ -3,6 +3,6 @@
 DerivedData/
 *.DS_Store
 
-# Download licensed Duo bezel resources directly from Apple; keep local copies out of Git.
-Assets/Frames/iPhone Duo - Night Sky - *.png
-Assets/Frames/Apple-Design-Resources-License.rtf
+# Download licensed Apple bezel resources directly; keep all source assets local.
+Assets/Frames/*
+!Assets/Frames/README.md

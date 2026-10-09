@@ -668,6 +668,7 @@ legend {
 }
 
 .field select {
+  font-size: 13px;
   background: var(--panel-alt);
   border: 1px solid var(--border);
   border-radius: 8px;

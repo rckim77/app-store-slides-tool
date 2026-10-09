@@ -196,10 +196,15 @@ function showToast(message) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...options
-  });
+  let response;
+  try {
+    response = await fetch(path, {
+      headers: { "Content-Type": "application/json" },
+      ...options
+    });
+  } catch {
+    throw new Error(`Cannot reach the local editor server on port ${window.location.port}. Restart it, then try again.`);
+  }
   const body = await response.json();
   if (!response.ok || body.error) {
     throw new Error(body.error || `Request failed: ${response.status}`);

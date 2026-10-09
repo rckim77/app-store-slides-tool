@@ -152,5 +152,6 @@ After `swift build`, run the editor checks and renderer pixel checks:
 ```sh
 node Scripts/test-editor-loupes.js
 node Scripts/test-editor-caption-position.js
+node Scripts/test-editor-api.js
 xcrun swift Scripts/test-caption-layout.swift .build/debug/app-store-slides-tool
 ```

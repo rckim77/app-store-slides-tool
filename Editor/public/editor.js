@@ -64,6 +64,7 @@ let activeSetId = null;
 let activeSlideId = null;
 let draftLoupe = null;
 let dragSlideId = null;
+let animateNextSlideList = false;
 let slidePreviewTimer = null;
 let loupeRenderTimer = null;
 let slidePreviewRequest = 0;
@@ -324,6 +325,11 @@ function updateURLSelection(set) {
 }
 
 function renderSlideList() {
+  const animate = animateNextSlideList;
+  animateNextSlideList = false;
+  const listRect = elements.slideList.getBoundingClientRect();
+  const previous = animate ? new Map([...elements.slideList.querySelectorAll(".slide-button:not(.slide-exiting)")]
+    .map((button) => [button.dataset.slideId, {button, rect: button.getBoundingClientRect()}])) : new Map();
   const set = activeSet();
   const canvas = set.canvas || { width: 1290, height: 2796 };
   const editable = Boolean(set.editable);
@@ -368,9 +374,40 @@ function renderSlideList() {
 
     elements.slideList.appendChild(button);
   });
-  window.requestAnimationFrame(() => {
+  if (animate) {
     elements.slideList.classList.remove("is-loading");
-  });
+    animateSlideListChange(previous, listRect);
+  } else {
+    window.requestAnimationFrame(() => {
+      elements.slideList.classList.remove("is-loading");
+    });
+  }
+}
+
+function animateSlideListChange(previous, listRect) {
+  const timing = {duration: 200, easing: "cubic-bezier(0.2, 0, 0, 1)"};
+  for (const button of elements.slideList.querySelectorAll(".slide-button")) {
+    const old = previous.get(button.dataset.slideId);
+    if (old) {
+      // Start surviving rows at their old positions while the list adopts its new layout.
+      const offset = old.rect.top - button.getBoundingClientRect().top;
+      if (offset) button.animate([{transform: `translateY(${offset}px)`}, {transform: "translateY(0)"}], timing);
+      previous.delete(button.dataset.slideId);
+    } else {
+      button.animate([{opacity: 0, transform: "translateX(-8px)"}, {opacity: 1, transform: "translateX(0)"}], timing);
+    }
+  }
+  for (const {button, rect} of previous.values()) {
+    button.classList.add("slide-exiting");
+    button.disabled = true;
+    button.setAttribute("aria-hidden", "true");
+    Object.assign(button.style, {position: "absolute", top: `${rect.top - listRect.top}px`,
+      left: `${rect.left - listRect.left}px`, width: `${rect.width}px`});
+    elements.slideList.appendChild(button);
+    const animation = button.animate([{opacity: 1, transform: "translateX(0)"},
+      {opacity: 0, transform: "translateX(-8px)"}], timing);
+    animation.finished.then(() => button.remove(), () => button.remove());
+  }
 }
 
 function clearSlideDropIndicators() {
@@ -645,6 +682,7 @@ async function applyStructureHistory(entry, redo) {
   state = nextState;
   activeSetId = state.activeSetId;
   activeSlideId = redo ? change.afterSlideId : change.beforeSlideId;
+  animateNextSlideList = true;
   render();
 }
 
@@ -1216,6 +1254,7 @@ async function changeActiveSlide(action) {
     state = nextState;
     activeSetId = state.activeSetId;
     activeSlideId = duplicatedSlideId || selectedSlideId;
+    animateNextSlideList = true;
     render();
     historyStack.push({...currentSnapshot(), structureChange: {
       token: slideChangeToken, present: action === "duplicate",

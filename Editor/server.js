@@ -1134,6 +1134,65 @@ function previewCaption(payload) {
   };
 }
 
+function duplicateSlide(payload) {
+  const sets = allSlideSets();
+  const targetSet = sets.find((set) => set.id === payload.setId && set.editable);
+  if (!targetSet) {
+    throw new Error("Only current generated slides can be duplicated");
+  }
+  const config = readConfig(targetSet.configPath);
+  const index = config.slides.findIndex((slide) => slide.id === payload.slideId);
+  if (index < 0) {
+    throw new Error("Select a configured slide to duplicate");
+  }
+  const original = config.slides[index];
+  const screenshotRoots = [...new Set(Object.values(config.devices).map((device) =>
+    resolveFromConfig(targetSet.configPath, device.screenshotRoot)))];
+  const outputDirs = [...new Set(sets.filter((set) => set.editable
+    && set.configPath === targetSet.configPath && set.version === targetSet.version)
+    .map((set) => set.outputDir))];
+  let id;
+  let screenshot;
+  let suffix = 1;
+  do {
+    id = `${original.id}-copy${suffix === 1 ? "" : `-${suffix}`}`;
+    screenshot = `${id}${path.extname(original.screenshot)}`;
+    suffix += 1;
+  } while (config.slides.some((slide) => slide.id === id || slide.screenshot === screenshot)
+    || screenshotRoots.some((dir) => fs.existsSync(path.join(dir, screenshot)))
+    || outputDirs.some((dir) => fs.existsSync(path.join(dir, `${id}.png`))));
+
+  const copies = screenshotRoots.map((dir) => [
+    path.resolve(dir, original.screenshot), path.join(dir, screenshot)
+  ]);
+  for (const dir of outputDirs) {
+    const source = path.join(dir, `${original.id}.png`);
+    if (isFile(source)) copies.push([source, path.join(dir, `${id}.png`)]);
+  }
+  for (const [source] of copies) {
+    if (!isFile(source)) throw new Error(`Missing source screenshot: ${source}`);
+  }
+  const duplicate = cloneJSON(original);
+  duplicate.id = id;
+  duplicate.screenshot = screenshot;
+  config.slides.splice(index + 1, 0, duplicate);
+  const created = [];
+  try {
+    for (const [source, destination] of copies) {
+      fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
+      created.push(destination);
+    }
+    writeConfig(config, targetSet.configPath);
+  } catch (error) {
+    for (const file of created) fs.unlinkSync(file);
+    throw error;
+  }
+  return {
+    ...editorState({device: targetSet.device, version: targetSet.version, locale: targetSet.locale}),
+    duplicatedSlideId: id
+  };
+}
+
 function reorderSlides(payload) {
   const sets = allSlideSets();
   const targetSet = sets.find((set) => set.id === payload.setId);
@@ -1394,6 +1453,12 @@ async function handleRequest(request, response) {
   if (request.method === "POST" && requestURL.pathname === "/api/preview") {
     const payload = JSON.parse(await readBody(request) || "{}");
     sendJSON(response, 200, previewCaption(payload));
+    return;
+  }
+
+  if (request.method === "POST" && requestURL.pathname === "/api/slides/duplicate") {
+    const payload = JSON.parse(await readBody(request) || "{}");
+    sendJSON(response, 200, duplicateSlide(payload));
     return;
   }
 

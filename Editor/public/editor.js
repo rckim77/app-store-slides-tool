@@ -29,6 +29,7 @@ const elements = {
   copyLoupeButton: document.getElementById("copyLoupeButton"),
   pasteLoupeButton: document.getElementById("pasteLoupeButton"),
   pasteLoupeLocalesButton: document.getElementById("pasteLoupeLocalesButton"),
+  duplicateSlideButton: document.getElementById("duplicateSlideButton"),
   saveSlideButton: document.getElementById("saveSlideButton"),
   viewAllButton: document.getElementById("viewAllButton"),
   galleryOverlay: document.getElementById("galleryOverlay"),
@@ -215,6 +216,7 @@ async function api(path, options = {}) {
 function setBusy(isBusy) {
   const editable = Boolean(activeSet()?.editable);
   elements.saveSlideButton.disabled = isBusy || !editable;
+  elements.duplicateSlideButton.disabled = isBusy || !editable;
   elements.viewAllButton.disabled = isBusy;
   elements.gallerySaveAllButton.disabled = isBusy || !editable;
   elements.loadingIndicator.hidden = !isBusy;
@@ -1087,6 +1089,7 @@ function updateEditableState() {
   const editable = Boolean(activeSet().editable);
   elements.controls.classList.toggle("read-only", !editable);
   elements.saveSlideButton.disabled = !editable;
+  elements.duplicateSlideButton.disabled = !editable;
   elements.gallerySaveAllButton.disabled = !editable;
   elements.contextLabel.textContent = editable
     ? `${activeSet().version} / ${activeSet().device} / ${activeSet().locale} · edits save to ${activeSet().configPath}`
@@ -1157,6 +1160,36 @@ function savePayload() {
     captionText: elements.captionText.value,
     captionPosition: elements.captionPosition.value
   };
+}
+
+async function duplicateActiveSlide() {
+  if (!activeSet()?.editable) return;
+  clearTimeout(slidePreviewTimer);
+  clearTimeout(loupeRenderTimer);
+  setBusy(true);
+  try {
+    await slidePreviewChain;
+    const payload = savePayload();
+    await api(`/api/slides/${encodeURIComponent(payload.slideId)}`, {
+      method: "POST", body: JSON.stringify(payload)
+    });
+    const result = await api("/api/slides/duplicate", {
+      method: "POST", body: JSON.stringify({setId: payload.setId, slideId: payload.slideId})
+    });
+    const {duplicatedSlideId, ...nextState} = result;
+    state = nextState;
+    activeSetId = state.activeSetId;
+    activeSlideId = duplicatedSlideId;
+    historyStack = [];
+    redoStack = [];
+    render();
+    updateLastSavedLabel();
+    showToast("Slide duplicated — edit your new copy");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function saveActiveSlide() {
@@ -1610,6 +1643,7 @@ elements.loupeEnabled.addEventListener("change", () => {
 });
 
 elements.themeToggle.addEventListener("click", toggleTheme);
+elements.duplicateSlideButton.addEventListener("click", duplicateActiveSlide);
 elements.saveSlideButton.addEventListener("click", saveActiveSlide);
 elements.viewAllButton.addEventListener("click", openGallery);
 elements.galleryCloseButton.addEventListener("click", closeGallery);

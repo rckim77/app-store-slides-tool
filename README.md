@@ -168,3 +168,7 @@ node Scripts/test-editor-caption-position.js
 node Scripts/test-editor-api.js
 xcrun swift Scripts/test-caption-layout.swift .build/debug/app-store-slides-tool
 ```
+
+### Duplicate a slide
+
+Select an editable slide and click **Duplicate slide** beside **View all**. The editor saves current edits, inserts a copy immediately after the original, and selects it. Captions, device layouts, loupe settings, and screenshots are copied. Each copy gets a unique ID and independent screenshot files. Duplication applies to the selected config (including its configured devices and locales); separate config files are unchanged. Historical and imported slide sets remain read-only.

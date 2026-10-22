@@ -467,13 +467,17 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  justify-content: flex-end;
+  justify-content: flex-start;
   min-width: 0;
 }
 
 .actions > button {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.actions button {
+  border-radius: 999px;
 }
 
 .edit-actions {

@@ -552,7 +552,7 @@ h2 {
   align-items: center;
   display: flex;
   justify-content: center;
-  min-height: calc(100vh - 170px);
+  min-height: 0;
   min-width: 0;
   padding: 20px 24px 32px;
 }
@@ -560,14 +560,12 @@ h2 {
 .stage {
   background: var(--secondary);
   box-shadow: 0 6px 16px -4px var(--shadow);
-  max-height: calc(100vh - 160px);
   max-width: min(100%, 620px);
   position: relative;
   transition: opacity 160ms ease, transform 160ms ease;
 }
 
 .stage.device-ipad {
-  max-height: calc((100vh - 160px) * 1.43);
   max-width: min(100%, 882px);
 }
 
@@ -579,15 +577,11 @@ h2 {
 .stage img {
   display: block;
   height: auto;
-  max-height: calc(100vh - 160px);
+  width: 100%;
   max-width: 100%;
   pointer-events: none;
   transition: opacity 160ms ease;
   user-select: none;
-}
-
-.stage.device-ipad img {
-  max-height: calc((100vh - 160px) * 1.43);
 }
 
 .controls {

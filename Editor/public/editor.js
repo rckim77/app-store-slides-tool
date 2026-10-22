@@ -84,6 +84,11 @@ const galleryDeviceZoom = { iphone: 1, ipad: 1 };
 let copiedLoupeSettings = null;
 
 const PREVIEW_DEBOUNCE_MS = 16;
+const CAPTION_DEBOUNCE_MS = 500;
+let captionDraftRevision = 0;
+let captionIsComposing = false;
+let queuedPreviewOptions = null;
+let previewQueuePending = false;
 const PADDING_PREVIEW_DEBOUNCE_MS = 120;
 const DEFAULT_CAPTION_COLOR = "#000000";
 const GALLERY_ZOOM_MIN = 0.5;
@@ -233,6 +238,21 @@ function setBusy(isBusy) {
 function setVisualLoading(isLoading) {
   elements.stage.classList.toggle("is-loading", isLoading);
   elements.slideList.classList.toggle("is-loading", isLoading);
+}
+
+function fitStageToViewport() {
+  if (!state || !activeSet()) return;
+  const wrapper = elements.stage.parentElement;
+  const grid = wrapper.parentElement;
+  const padding = window.getComputedStyle(wrapper);
+  const horizontal = parseFloat(padding.paddingLeft) + parseFloat(padding.paddingRight);
+  const vertical = parseFloat(padding.paddingTop) + parseFloat(padding.paddingBottom);
+  const top = wrapper.getBoundingClientRect().top + window.scrollY + grid.scrollTop;
+  const availableHeight = Math.max(40, window.innerHeight - Math.max(0, top) - vertical - 24);
+  const canvas = canvasSize();
+  const width = Math.max(1, Math.min(wrapper.clientWidth - horizontal,
+    availableHeight * canvas.width / canvas.height, activeSet().device === "ipad" ? 882 : 620));
+  elements.stage.style.width = `${width}px`;
 }
 
 function syncStageForDevice() {
@@ -797,10 +817,10 @@ function applyOptimisticCaptionText() {
   if (slide) {
     slide.caption = text;
   }
-  updateActiveSlideThumb();
+  updateActiveSlideThumb({refreshImage: false});
 }
 
-function updateActiveSlideThumb() {
+function updateActiveSlideThumb({refreshImage = true} = {}) {
   const slide = activeSlide();
   if (!slide || !activeSlideId) {
     return;
@@ -814,7 +834,7 @@ function updateActiveSlideThumb() {
 
   const thumb = button.querySelector(".slide-thumb");
   const title = button.querySelector(".slide-title");
-  if (thumb) {
+  if (thumb && refreshImage) {
     thumb.src = cacheBustedImageUrl(slide.imageUrl);
   }
   if (title) {
@@ -853,11 +873,12 @@ function scheduleSlidePreview(options = {}) {
     scheduleSlidePreview.pendingOptions,
     options
   );
-  const debounceMs = scheduleSlidePreview.pendingOptions.refreshAllSlides
-    ? PADDING_PREVIEW_DEBOUNCE_MS
-    : PREVIEW_DEBOUNCE_MS;
+  const debounceMs = scheduleSlidePreview.pendingOptions.optimisticCaption
+    ? CAPTION_DEBOUNCE_MS
+    : scheduleSlidePreview.pendingOptions.refreshAllSlides ? PADDING_PREVIEW_DEBOUNCE_MS : PREVIEW_DEBOUNCE_MS;
 
   window.clearTimeout(slidePreviewTimer);
+  if (options.optimisticCaption && !elements.captionText.value.trim()) return;
   slidePreviewTimer = window.setTimeout(() => {
     const pendingOptions = scheduleSlidePreview.pendingOptions || {};
     scheduleSlidePreview.pendingOptions = null;
@@ -881,11 +902,16 @@ function scheduleLoupePreview() {
 }
 
 function enqueuePreviewSlide(options = {}) {
-  slidePreviewChain = slidePreviewChain
-    .then(() => previewSlide(options))
-    .catch((error) => {
-      showToast(error.message);
-    });
+  queuedPreviewOptions = mergeScheduledPreviewOptions(queuedPreviewOptions, options);
+  if (!previewQueuePending) {
+    previewQueuePending = true;
+    slidePreviewChain = slidePreviewChain.then(async () => {
+      const nextOptions = queuedPreviewOptions;
+      queuedPreviewOptions = null;
+      previewQueuePending = false;
+      await previewSlide(nextOptions);
+    }).catch((error) => showToast(error.message));
+  }
   return slidePreviewChain;
 }
 
@@ -900,6 +926,8 @@ async function previewSlide(options = {}) {
   }
 
   const requestId = ++slidePreviewRequest;
+  const revision = captionDraftRevision;
+  const slideId = activeSlideId;
   setBusy(true);
   try {
     const refreshAllSlides = Boolean(options.refreshAllSlides);
@@ -907,7 +935,8 @@ async function previewSlide(options = {}) {
       method: "POST",
       body: JSON.stringify(slidePreviewPayload({ refreshAllSlides }))
     });
-    if (requestId !== slidePreviewRequest) {
+    if (requestId !== slidePreviewRequest || revision !== captionDraftRevision
+      || activeSlideId !== slideId || activeSetId !== set.id) {
       return;
     }
     const previewRefresh = nextState.previewRefresh;
@@ -919,7 +948,7 @@ async function previewSlide(options = {}) {
     if (refreshedSlide) {
       elements.slideImage.src = cacheBustedImageUrl(refreshedSlide.imageUrl);
       elements.captionLabel.textContent = refreshedSlide.caption;
-      elements.captionText.value = refreshedSlide.caption;
+      if (document.activeElement !== elements.captionText) elements.captionText.value = refreshedSlide.caption;
       elements.captionPosition.value = refreshedSlide.captionPosition || "top";
     }
     renderSlideList();
@@ -927,6 +956,7 @@ async function previewSlide(options = {}) {
       renderGallery();
     }
     syncGlobalColorsFromState();
+    window.requestAnimationFrame(fitStageToViewport);
   } catch (error) {
     if (requestId === slidePreviewRequest) {
       showToast(error.message);
@@ -1102,6 +1132,7 @@ function selectSlide(slideId) {
   renderSlideList();
   updateEditableState();
   resetHistory();
+  window.requestAnimationFrame(fitStageToViewport);
 }
 
 function syncControlsFromSet() {
@@ -1564,6 +1595,7 @@ async function load() {
   });
   activeSlideId = activeSet()?.slides[0]?.id;
   render();
+  window.scrollTo(0, 0);
 }
 
 elements.slideList.addEventListener("dragover", (event) => {
@@ -1657,8 +1689,22 @@ captionFields.forEach((input) => {
 });
 
 elements.captionPosition.addEventListener("change", () => scheduleSlidePreview());
-elements.captionText.addEventListener("input", () => scheduleSlidePreview({ optimisticCaption: true }));
-elements.captionText.addEventListener("change", () => scheduleSlidePreview({ optimisticCaption: true }));
+function captionTextChanged(event) {
+  captionDraftRevision += 1;
+  if (captionIsComposing || event?.isComposing) return;
+  scheduleSlidePreview({optimisticCaption: true});
+}
+elements.captionText.addEventListener("input", captionTextChanged);
+elements.captionText.addEventListener("change", captionTextChanged);
+elements.captionText.addEventListener("compositionstart", () => {
+  captionIsComposing = true;
+  captionDraftRevision += 1;
+  window.clearTimeout(slidePreviewTimer);
+});
+elements.captionText.addEventListener("compositionend", () => {
+  captionIsComposing = false;
+  captionTextChanged();
+});
 
 document.querySelectorAll(".stepper-button").forEach((button) => {
   button.addEventListener("click", () => {
@@ -1740,6 +1786,13 @@ document.addEventListener("keydown", (event) => {
 });
 elements.undoButton.addEventListener("click", () => undoEdit().catch((error) => showToast(error.message)));
 elements.redoButton.addEventListener("click", () => redoEdit().catch((error) => showToast(error.message)));
+
+window.history.scrollRestoration = "manual";
+const previewResizeObserver = new ResizeObserver(() => window.requestAnimationFrame(fitStageToViewport));
+previewResizeObserver.observe(document.querySelector(".topbar"));
+previewResizeObserver.observe(document.querySelector(".workspace"));
+window.addEventListener("resize", fitStageToViewport);
+elements.slideImage.addEventListener("load", fitStageToViewport);
 
 initTheme();
 initGalleryScrollHandlers();

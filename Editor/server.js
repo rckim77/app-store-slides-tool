@@ -721,8 +721,8 @@ function sanitizeCaptionText(value) {
     throw new Error("captionText must be a string");
   }
 
-  const normalized = value.replace(/\r\n/g, "\n").trim();
-  if (!normalized) {
+  const normalized = value.replace(/\r\n/g, "\n");
+  if (!normalized.trim()) {
     throw new Error("captionText cannot be empty");
   }
 

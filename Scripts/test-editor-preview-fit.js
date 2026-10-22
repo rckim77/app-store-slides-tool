@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const vm=require('node:vm');
+const source=fs.readFileSync(path.join(__dirname,'../Editor/public/editor.js'),'utf8');
+const start=source.indexOf('function fitStageToViewport()');const end=source.indexOf('\nfunction syncStageForDevice',start);
+const stage={style:{}};const wrapper={clientWidth:600,getBoundingClientRect:()=>({top:200}),parentElement:{scrollTop:0}};stage.parentElement=wrapper;
+const context=vm.createContext({elements:{stage},state:{},activeSet:()=>({device:'iphone'}),canvasSize:()=>({width:1290,height:2796}),window:{innerHeight:900,scrollY:0,getComputedStyle:()=>({paddingLeft:'24',paddingRight:'24',paddingTop:'20',paddingBottom:'32'})}});
+vm.runInContext(source.slice(start,end),context);const fit=()=>vm.runInContext('fitStageToViewport()',context);
+fit();let width=parseFloat(stage.style.width);assert.ok(200+52+width*2796/1290+24<=900.01);
+wrapper.getBoundingClientRect=()=>({top:620});fit();width=parseFloat(stage.style.width);assert.ok(620+52+width*2796/1290+24<=900.01,'Narrow stacked UI must fit the full preview');
+context.activeSet=()=>({device:'ipad'});context.canvasSize=()=>({width:2732,height:2048});wrapper.getBoundingClientRect=()=>({top:180});wrapper.clientWidth=1000;fit();width=parseFloat(stage.style.width);assert.ok(width<=882);assert.ok(180+52+width*2048/2732+24<=900.01);
+context.window.scrollY=100;wrapper.getBoundingClientRect=()=>({top:80});fit();assert.equal(parseFloat(stage.style.width),width,'Scrolling must not change the fitted size');
+context.window.innerHeight=700;fit();assert.ok(parseFloat(stage.style.width)<width,'Resizing must refit the preview');
+console.log('Preview fit: portrait, landscape iPad, stacked layout, scrolling and resize checks passed');

@@ -29,6 +29,8 @@ const elements = {
   copyLoupeButton: document.getElementById("copyLoupeButton"),
   pasteLoupeButton: document.getElementById("pasteLoupeButton"),
   pasteLoupeLocalesButton: document.getElementById("pasteLoupeLocalesButton"),
+  deleteSlideButton: document.getElementById("deleteSlideButton"),
+  duplicateSlideButton: document.getElementById("duplicateSlideButton"),
   saveSlideButton: document.getElementById("saveSlideButton"),
   viewAllButton: document.getElementById("viewAllButton"),
   galleryOverlay: document.getElementById("galleryOverlay"),
@@ -62,11 +64,15 @@ let activeSetId = null;
 let activeSlideId = null;
 let draftLoupe = null;
 let dragSlideId = null;
+let animateNextSlideList = false;
 let slidePreviewTimer = null;
 let loupeRenderTimer = null;
 let slidePreviewRequest = 0;
 let slidePreviewChain = Promise.resolve();
 let historyStack = [];
+let historySetId = null;
+let slideMutationPending = false;
+const slideBaselines = new Map();
 let redoStack = [];
 let isApplyingHistory = false;
 let captionColorHistoryAnchor = null;
@@ -78,6 +84,11 @@ const galleryDeviceZoom = { iphone: 1, ipad: 1 };
 let copiedLoupeSettings = null;
 
 const PREVIEW_DEBOUNCE_MS = 16;
+const CAPTION_DEBOUNCE_MS = 500;
+let captionDraftRevision = 0;
+let captionIsComposing = false;
+let queuedPreviewOptions = null;
+let previewQueuePending = false;
 const PADDING_PREVIEW_DEBOUNCE_MS = 120;
 const DEFAULT_CAPTION_COLOR = "#000000";
 const GALLERY_ZOOM_MIN = 0.5;
@@ -215,6 +226,8 @@ async function api(path, options = {}) {
 function setBusy(isBusy) {
   const editable = Boolean(activeSet()?.editable);
   elements.saveSlideButton.disabled = isBusy || !editable;
+  elements.duplicateSlideButton.disabled = isBusy || !editable;
+  elements.deleteSlideButton.disabled = isBusy || !editable || activeSet().slides.length <= 1;
   elements.viewAllButton.disabled = isBusy;
   elements.gallerySaveAllButton.disabled = isBusy || !editable;
   elements.loadingIndicator.hidden = !isBusy;
@@ -225,6 +238,21 @@ function setBusy(isBusy) {
 function setVisualLoading(isLoading) {
   elements.stage.classList.toggle("is-loading", isLoading);
   elements.slideList.classList.toggle("is-loading", isLoading);
+}
+
+function fitStageToViewport() {
+  if (!state || !activeSet()) return;
+  const wrapper = elements.stage.parentElement;
+  const grid = wrapper.parentElement;
+  const padding = window.getComputedStyle(wrapper);
+  const horizontal = parseFloat(padding.paddingLeft) + parseFloat(padding.paddingRight);
+  const vertical = parseFloat(padding.paddingTop) + parseFloat(padding.paddingBottom);
+  const top = wrapper.getBoundingClientRect().top + window.scrollY + grid.scrollTop;
+  const availableHeight = Math.max(40, window.innerHeight - Math.max(0, top) - vertical - 24);
+  const canvas = canvasSize();
+  const width = Math.max(1, Math.min(wrapper.clientWidth - horizontal,
+    availableHeight * canvas.width / canvas.height, activeSet().device === "ipad" ? 882 : 620));
+  elements.stage.style.width = `${width}px`;
 }
 
 function syncStageForDevice() {
@@ -317,6 +345,11 @@ function updateURLSelection(set) {
 }
 
 function renderSlideList() {
+  const animate = animateNextSlideList;
+  animateNextSlideList = false;
+  const listRect = elements.slideList.getBoundingClientRect();
+  const previous = animate ? new Map([...elements.slideList.querySelectorAll(".slide-button:not(.slide-exiting)")]
+    .map((button) => [button.dataset.slideId, {button, rect: button.getBoundingClientRect()}])) : new Map();
   const set = activeSet();
   const canvas = set.canvas || { width: 1290, height: 2796 };
   const editable = Boolean(set.editable);
@@ -361,9 +394,40 @@ function renderSlideList() {
 
     elements.slideList.appendChild(button);
   });
-  window.requestAnimationFrame(() => {
+  if (animate) {
     elements.slideList.classList.remove("is-loading");
-  });
+    animateSlideListChange(previous, listRect);
+  } else {
+    window.requestAnimationFrame(() => {
+      elements.slideList.classList.remove("is-loading");
+    });
+  }
+}
+
+function animateSlideListChange(previous, listRect) {
+  const timing = {duration: 200, easing: "cubic-bezier(0.2, 0, 0, 1)"};
+  for (const button of elements.slideList.querySelectorAll(".slide-button")) {
+    const old = previous.get(button.dataset.slideId);
+    if (old) {
+      // Start surviving rows at their old positions while the list adopts its new layout.
+      const offset = old.rect.top - button.getBoundingClientRect().top;
+      if (offset) button.animate([{transform: `translateY(${offset}px)`}, {transform: "translateY(0)"}], timing);
+      previous.delete(button.dataset.slideId);
+    } else {
+      button.animate([{opacity: 0, transform: "translateX(-8px)"}, {opacity: 1, transform: "translateX(0)"}], timing);
+    }
+  }
+  for (const {button, rect} of previous.values()) {
+    button.classList.add("slide-exiting");
+    button.disabled = true;
+    button.setAttribute("aria-hidden", "true");
+    Object.assign(button.style, {position: "absolute", top: `${rect.top - listRect.top}px`,
+      left: `${rect.left - listRect.left}px`, width: `${rect.width}px`});
+    elements.slideList.appendChild(button);
+    const animation = button.animate([{opacity: 1, transform: "translateX(0)"},
+      {opacity: 0, transform: "translateX(-8px)"}], timing);
+    animation.finished.then(() => button.remove(), () => button.remove());
+  }
 }
 
 function clearSlideDropIndicators() {
@@ -452,6 +516,8 @@ function cloneLoupe(loupe) {
 function currentSnapshot() {
   updateLoupeFromControls();
   return {
+    slideId: activeSlideId,
+    setId: activeSetId,
     caption: captionPaddingValues(),
     captionColor: globalCaptionColorValue(),
     backgroundColor: globalBackgroundColorValue(),
@@ -462,7 +528,8 @@ function currentSnapshot() {
 }
 
 function snapshotKey(snapshot) {
-  return JSON.stringify(snapshot);
+  const {undoSnapshot, structureChange, ...values} = snapshot;
+  return JSON.stringify(values);
 }
 
 function applyEditorState(nextState) {
@@ -502,18 +569,22 @@ function updateHistoryButtons(isBusy = false) {
 }
 
 function resetHistory() {
-  historyStack = activeSet()?.editable ? [currentSnapshot()] : [];
-  redoStack = [];
+  if (historySetId !== activeSetId) {
+    historyStack = activeSet()?.editable ? [currentSnapshot()] : [];
+    redoStack = [];
+    slideBaselines.clear();
+    historySetId = activeSetId;
+  }
+  slideBaselines.set(activeSlideId, currentSnapshot());
   updateHistoryButtons();
 }
 
 function pushHistorySnapshot(snapshot) {
-  const last = historyStack[historyStack.length - 1];
-  if (!last || snapshotKey(last) !== snapshotKey(snapshot)) {
-    historyStack.push(snapshot);
-    if (historyStack.length > 100) {
-      historyStack.shift();
-    }
+  const previous = slideBaselines.get(snapshot.slideId);
+  if (!previous || snapshotKey(previous) !== snapshotKey(snapshot)) {
+    historyStack.push({...snapshot, undoSnapshot: previous});
+    slideBaselines.set(snapshot.slideId, snapshot);
+    if (historyStack.length > 100) historyStack.shift();
     redoStack = [];
     updateHistoryButtons();
   }
@@ -565,6 +636,8 @@ async function applySnapshot(snapshot) {
   isApplyingHistory = true;
   setBusy(true);
   try {
+    activeSetId = snapshot.setId || activeSetId;
+    selectSlide(snapshot.slideId || activeSlideId);
     const set = activeSet();
     if (snapshot.loupeLocalesRestore) {
       applyEditorState(await api("/api/loupe/restore-locales", {
@@ -603,7 +676,8 @@ async function applySnapshot(snapshot) {
     const crossLocaleLoupeChange = Boolean(snapshot.loupeLocalesRestore || snapshot.loupePasteAllLocales);
     await previewSlide({
       recordHistory: false,
-      refreshAllSlides: crossLocaleLoupeChange
+      refreshAllSlides: crossLocaleLoupeChange,
+      throwOnError: true
     });
     if (crossLocaleLoupeChange) {
       renderSlideList();
@@ -612,32 +686,50 @@ async function applySnapshot(snapshot) {
       }
     }
   } finally {
+    slideBaselines.set(activeSlideId, currentSnapshot());
     isApplyingHistory = false;
     setBusy(false);
     updateHistoryButtons();
   }
 }
 
-async function undoEdit() {
-  if (historyStack.length < 2) {
-    return;
-  }
+async function applyStructureHistory(entry, redo) {
+  const change = entry.structureChange;
+  const present = redo ? change.present : !change.present;
+  const nextState = await api("/api/slides/history", {
+    method: "POST", body: JSON.stringify({token: change.token, present})
+  });
+  state = nextState;
+  activeSetId = state.activeSetId;
+  activeSlideId = redo ? change.afterSlideId : change.beforeSlideId;
+  animateNextSlideList = true;
+  render();
+}
 
-  const current = historyStack.pop();
-  redoStack.push(current);
-  updateHistoryButtons(true);
-  await applySnapshot(historyStack[historyStack.length - 1]);
+async function undoEdit() {
+  if (historyStack.length < 2) return;
+  const current = historyStack.at(-1);
+  setBusy(true);
+  try {
+    if (current.structureChange) await applyStructureHistory(current, false);
+    else await applySnapshot(current.undoSnapshot || historyStack.at(-2));
+    historyStack.pop();
+    redoStack.push(current);
+  } catch (error) { showToast(error.message); }
+  finally { setBusy(false); }
 }
 
 async function redoEdit() {
-  if (redoStack.length === 0) {
-    return;
-  }
-
-  const next = redoStack.pop();
-  historyStack.push(next);
-  updateHistoryButtons(true);
-  await applySnapshot(next);
+  if (!redoStack.length) return;
+  const next = redoStack.at(-1);
+  setBusy(true);
+  try {
+    if (next.structureChange) await applyStructureHistory(next, true);
+    else await applySnapshot(next);
+    redoStack.pop();
+    historyStack.push(next);
+  } catch (error) { showToast(error.message); }
+  finally { setBusy(false); }
 }
 
 const LOUPE_STEPPER_IDS = new Set([
@@ -725,10 +817,10 @@ function applyOptimisticCaptionText() {
   if (slide) {
     slide.caption = text;
   }
-  updateActiveSlideThumb();
+  updateActiveSlideThumb({refreshImage: false});
 }
 
-function updateActiveSlideThumb() {
+function updateActiveSlideThumb({refreshImage = true} = {}) {
   const slide = activeSlide();
   if (!slide || !activeSlideId) {
     return;
@@ -742,7 +834,7 @@ function updateActiveSlideThumb() {
 
   const thumb = button.querySelector(".slide-thumb");
   const title = button.querySelector(".slide-title");
-  if (thumb) {
+  if (thumb && refreshImage) {
     thumb.src = cacheBustedImageUrl(slide.imageUrl);
   }
   if (title) {
@@ -781,11 +873,12 @@ function scheduleSlidePreview(options = {}) {
     scheduleSlidePreview.pendingOptions,
     options
   );
-  const debounceMs = scheduleSlidePreview.pendingOptions.refreshAllSlides
-    ? PADDING_PREVIEW_DEBOUNCE_MS
-    : PREVIEW_DEBOUNCE_MS;
+  const debounceMs = scheduleSlidePreview.pendingOptions.optimisticCaption
+    ? CAPTION_DEBOUNCE_MS
+    : scheduleSlidePreview.pendingOptions.refreshAllSlides ? PADDING_PREVIEW_DEBOUNCE_MS : PREVIEW_DEBOUNCE_MS;
 
   window.clearTimeout(slidePreviewTimer);
+  if (options.optimisticCaption && !elements.captionText.value.trim()) return;
   slidePreviewTimer = window.setTimeout(() => {
     const pendingOptions = scheduleSlidePreview.pendingOptions || {};
     scheduleSlidePreview.pendingOptions = null;
@@ -809,11 +902,16 @@ function scheduleLoupePreview() {
 }
 
 function enqueuePreviewSlide(options = {}) {
-  slidePreviewChain = slidePreviewChain
-    .then(() => previewSlide(options))
-    .catch((error) => {
-      showToast(error.message);
-    });
+  queuedPreviewOptions = mergeScheduledPreviewOptions(queuedPreviewOptions, options);
+  if (!previewQueuePending) {
+    previewQueuePending = true;
+    slidePreviewChain = slidePreviewChain.then(async () => {
+      const nextOptions = queuedPreviewOptions;
+      queuedPreviewOptions = null;
+      previewQueuePending = false;
+      await previewSlide(nextOptions);
+    }).catch((error) => showToast(error.message));
+  }
   return slidePreviewChain;
 }
 
@@ -828,6 +926,8 @@ async function previewSlide(options = {}) {
   }
 
   const requestId = ++slidePreviewRequest;
+  const revision = captionDraftRevision;
+  const slideId = activeSlideId;
   setBusy(true);
   try {
     const refreshAllSlides = Boolean(options.refreshAllSlides);
@@ -835,7 +935,8 @@ async function previewSlide(options = {}) {
       method: "POST",
       body: JSON.stringify(slidePreviewPayload({ refreshAllSlides }))
     });
-    if (requestId !== slidePreviewRequest) {
+    if (requestId !== slidePreviewRequest || revision !== captionDraftRevision
+      || activeSlideId !== slideId || activeSetId !== set.id) {
       return;
     }
     const previewRefresh = nextState.previewRefresh;
@@ -847,7 +948,7 @@ async function previewSlide(options = {}) {
     if (refreshedSlide) {
       elements.slideImage.src = cacheBustedImageUrl(refreshedSlide.imageUrl);
       elements.captionLabel.textContent = refreshedSlide.caption;
-      elements.captionText.value = refreshedSlide.caption;
+      if (document.activeElement !== elements.captionText) elements.captionText.value = refreshedSlide.caption;
       elements.captionPosition.value = refreshedSlide.captionPosition || "top";
     }
     renderSlideList();
@@ -855,10 +956,12 @@ async function previewSlide(options = {}) {
       renderGallery();
     }
     syncGlobalColorsFromState();
+    window.requestAnimationFrame(fitStageToViewport);
   } catch (error) {
     if (requestId === slidePreviewRequest) {
       showToast(error.message);
     }
+    if (options.throwOnError) throw error;
   } finally {
     if (requestId === slidePreviewRequest) {
       setBusy(false);
@@ -1029,6 +1132,7 @@ function selectSlide(slideId) {
   renderSlideList();
   updateEditableState();
   resetHistory();
+  window.requestAnimationFrame(fitStageToViewport);
 }
 
 function syncControlsFromSet() {
@@ -1087,6 +1191,8 @@ function updateEditableState() {
   const editable = Boolean(activeSet().editable);
   elements.controls.classList.toggle("read-only", !editable);
   elements.saveSlideButton.disabled = !editable;
+  elements.duplicateSlideButton.disabled = !editable;
+  elements.deleteSlideButton.disabled = !editable || activeSet().slides.length <= 1;
   elements.gallerySaveAllButton.disabled = !editable;
   elements.contextLabel.textContent = editable
     ? `${activeSet().version} / ${activeSet().device} / ${activeSet().locale} · edits save to ${activeSet().configPath}`
@@ -1157,6 +1263,43 @@ function savePayload() {
     captionText: elements.captionText.value,
     captionPosition: elements.captionPosition.value
   };
+}
+
+async function changeActiveSlide(action) {
+  if (!activeSet()?.editable || slideMutationPending) return;
+  slideMutationPending = true;
+  clearTimeout(slidePreviewTimer);
+  clearTimeout(loupeRenderTimer);
+  setBusy(true);
+  try {
+    await slidePreviewChain;
+    const payload = savePayload();
+    recordHistory();
+    await api(`/api/slides/${encodeURIComponent(payload.slideId)}`, {
+      method: "POST", body: JSON.stringify(payload)
+    });
+    const result = await api(`/api/slides/${action}`, {
+      method: "POST", body: JSON.stringify({setId: payload.setId, slideId: payload.slideId})
+    });
+    const {duplicatedSlideId, selectedSlideId, slideChangeToken, ...nextState} = result;
+    state = nextState;
+    activeSetId = state.activeSetId;
+    activeSlideId = duplicatedSlideId || selectedSlideId;
+    animateNextSlideList = true;
+    render();
+    historyStack.push({...currentSnapshot(), structureChange: {
+      token: slideChangeToken, present: action === "duplicate",
+      beforeSlideId: payload.slideId, afterSlideId: activeSlideId
+    }});
+    redoStack = [];
+    updateLastSavedLabel();
+    showToast(action === "duplicate" ? "Slide duplicated — edit your new copy" : "Slide deleted — Undo to restore");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    slideMutationPending = false;
+    setBusy(false);
+  }
 }
 
 async function saveActiveSlide() {
@@ -1452,6 +1595,7 @@ async function load() {
   });
   activeSlideId = activeSet()?.slides[0]?.id;
   render();
+  window.scrollTo(0, 0);
 }
 
 elements.slideList.addEventListener("dragover", (event) => {
@@ -1545,8 +1689,22 @@ captionFields.forEach((input) => {
 });
 
 elements.captionPosition.addEventListener("change", () => scheduleSlidePreview());
-elements.captionText.addEventListener("input", () => scheduleSlidePreview({ optimisticCaption: true }));
-elements.captionText.addEventListener("change", () => scheduleSlidePreview({ optimisticCaption: true }));
+function captionTextChanged(event) {
+  captionDraftRevision += 1;
+  if (captionIsComposing || event?.isComposing) return;
+  scheduleSlidePreview({optimisticCaption: true});
+}
+elements.captionText.addEventListener("input", captionTextChanged);
+elements.captionText.addEventListener("change", captionTextChanged);
+elements.captionText.addEventListener("compositionstart", () => {
+  captionIsComposing = true;
+  captionDraftRevision += 1;
+  window.clearTimeout(slidePreviewTimer);
+});
+elements.captionText.addEventListener("compositionend", () => {
+  captionIsComposing = false;
+  captionTextChanged();
+});
 
 document.querySelectorAll(".stepper-button").forEach((button) => {
   button.addEventListener("click", () => {
@@ -1610,6 +1768,8 @@ elements.loupeEnabled.addEventListener("change", () => {
 });
 
 elements.themeToggle.addEventListener("click", toggleTheme);
+elements.duplicateSlideButton.addEventListener("click", () => changeActiveSlide("duplicate"));
+elements.deleteSlideButton.addEventListener("click", () => changeActiveSlide("delete"));
 elements.saveSlideButton.addEventListener("click", saveActiveSlide);
 elements.viewAllButton.addEventListener("click", openGallery);
 elements.galleryCloseButton.addEventListener("click", closeGallery);
@@ -1626,6 +1786,13 @@ document.addEventListener("keydown", (event) => {
 });
 elements.undoButton.addEventListener("click", () => undoEdit().catch((error) => showToast(error.message)));
 elements.redoButton.addEventListener("click", () => redoEdit().catch((error) => showToast(error.message)));
+
+window.history.scrollRestoration = "manual";
+const previewResizeObserver = new ResizeObserver(() => window.requestAnimationFrame(fitStageToViewport));
+previewResizeObserver.observe(document.querySelector(".topbar"));
+previewResizeObserver.observe(document.querySelector(".workspace"));
+window.addEventListener("resize", fitStageToViewport);
+elements.slideImage.addEventListener("load", fitStageToViewport);
 
 initTheme();
 initGalleryScrollHandlers();

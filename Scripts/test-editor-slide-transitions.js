@@ -1,0 +1,27 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const source = fs.readFileSync(path.join(__dirname,'../Editor/public/editor.js'),'utf8');
+const start=source.indexOf('function animateSlideListChange(');
+const end=source.indexOf('\nfunction clearSlideDropIndicators',start);
+const animations=[];const appended=[];
+const button=(id,top)=>({dataset:{slideId:id},style:{},classList:{add(){}},setAttribute(){},getBoundingClientRect:()=>({top}),animate(frames,timing){animations.push({id,frames,timing});return {finished:Promise.resolve()};},remove(){this.removed=true;}});
+const survivor=button('kept',10),added=button('new',30),removed=button('removed',20);
+const context=vm.createContext({elements:{slideList:{querySelectorAll:()=>[survivor,added],appendChild:node=>appended.push(node)}}});
+vm.runInContext(source.slice(start,end),context);
+context.previous=new Map([['kept',{button:button('kept',40),rect:{top:40}}],['removed',{button:removed,rect:{top:20,left:12,width:240}}]]);
+vm.runInContext('animateSlideListChange(previous,{top:0,left:0})',context);
+(async()=>{
+ await Promise.resolve();
+ assert.equal(animations.length,3);
+ assert.equal(animations[0].frames[0].transform,'translateY(30px)');
+ assert.equal(animations[1].frames[0].opacity,0);
+ assert.equal(animations[2].frames[1].opacity,0);
+ assert.equal(removed.disabled,true);
+ assert.equal(removed.style.position,'absolute');
+ assert.equal(removed.removed,true,'Outgoing rows are removed after fading out');
+ assert.equal(appended.length,1);
+ for(const animation of animations)assert.equal(animation.timing.duration,200);
+ console.log('Slide transitions: row movement, insertion fade, noninteractive exit and cleanup passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});

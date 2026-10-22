@@ -82,9 +82,10 @@
             <p class="eyebrow" id="slideIdLabel"></p>
             <h2 id="captionLabel"></h2>
             <p class="context-line" id="contextLabel"></p>
+            <span class="last-saved" id="lastSavedLabel" aria-live="polite"></span>
           </div>
           <div class="actions">
-            <span class="last-saved" id="lastSavedLabel" aria-live="polite"></span>
+            <button class="secondary" id="viewAllButton" type="button">View all</button>
             <div class="edit-actions">
               <span class="loading-indicator" id="loadingIndicator" hidden>
                 <span class="spinner" aria-hidden="true"></span>
@@ -93,7 +94,8 @@
               <button class="secondary" id="undoButton" type="button">Undo</button>
               <button class="secondary" id="redoButton" type="button">Redo</button>
             </div>
-            <button class="secondary" id="viewAllButton" type="button">View all</button>
+            <button class="secondary" id="deleteSlideButton" type="button" title="Delete selected slide (Undo restores it)">Delete slide</button>
+            <button class="secondary" id="duplicateSlideButton" type="button">Duplicate slide</button>
             <button id="saveSlideButton" type="button">Save slide</button>
           </div>
         </div>

@@ -721,8 +721,8 @@ function sanitizeCaptionText(value) {
     throw new Error("captionText must be a string");
   }
 
-  const normalized = value.replace(/\r\n/g, "\n").trim();
-  if (!normalized) {
+  const normalized = value.replace(/\r\n/g, "\n");
+  if (!normalized.trim()) {
     throw new Error("captionText cannot be empty");
   }
 
@@ -1134,6 +1134,138 @@ function previewCaption(payload) {
   };
 }
 
+const slideChanges = new Map();
+
+function rememberSlideChange(targetSet, slide, index, present) {
+  const token = require("crypto").randomUUID();
+  slideChanges.set(token, {
+    configPath: targetSet.configPath, slide: cloneJSON(slide), index, present,
+    selection: {device: targetSet.device, version: targetSet.version, locale: targetSet.locale},
+    outputDirs: [...new Set(allSlideSets().filter((set) => set.editable
+      && set.configPath === targetSet.configPath && set.version === targetSet.version)
+      .map((set) => set.outputDir))],
+    hidden: require("os").tmpdir() + `/slide-history-${token}`,
+    files: []
+  });
+  return token;
+}
+
+function changeSlidePresence(change, present) {
+  const config = readConfig(change.configPath);
+  const index = config.slides.findIndex((slide) => slide.id === change.slide.id);
+  if (present ? index >= 0 : index < 0) throw new Error("Slide history conflicts with the current config");
+  if (!present && config.slides.length === 1) throw new Error("Keep at least one slide in this config");
+  const moves = [];
+  if (present) {
+    for (const file of change.files) {
+      if (fs.existsSync(file.original)) throw new Error("A rendered slide already uses this filename");
+      moves.push([file.hidden, file.original]);
+    }
+    config.slides.splice(Math.min(change.index, config.slides.length), 0, cloneJSON(change.slide));
+  } else {
+    change.slide = cloneJSON(config.slides[index]);
+    change.index = index;
+    fs.mkdirSync(change.hidden, {recursive: true});
+    change.files = change.outputDirs.map((dir, i) => ({
+      original: path.join(dir, `${change.slide.id}.png`), hidden: path.join(change.hidden, `${i}.png`)
+    })).filter((file) => isFile(file.original));
+    moves.push(...change.files.map((file) => [file.original, file.hidden]));
+    config.slides.splice(index, 1);
+  }
+  const moved = [];
+  try {
+    // Retain inputs and park rendered files so Undo never depends on re-rendering or network access.
+    for (const [from, to] of moves) { fs.renameSync(from, to); moved.push([from, to]); }
+    writeConfig(config, change.configPath);
+  } catch (error) {
+    for (const [from, to] of moved.reverse()) fs.renameSync(to, from);
+    throw error;
+  }
+  change.present = present;
+}
+
+function deleteSlide(payload) {
+  const targetSet = allSlideSets().find((set) => set.id === payload.setId && set.editable);
+  if (!targetSet) throw new Error("Only current generated slides can be deleted");
+  const config = readConfig(targetSet.configPath);
+  const index = config.slides.findIndex((slide) => slide.id === payload.slideId);
+  if (index < 0) throw new Error("Select a configured slide to delete");
+  const token = rememberSlideChange(targetSet, config.slides[index], index, true);
+  try { changeSlidePresence(slideChanges.get(token), false); }
+  catch (error) { slideChanges.delete(token); throw error; }
+  return {...editorState(slideChanges.get(token).selection), slideChangeToken: token,
+    selectedSlideId: config.slides[index + 1]?.id || config.slides[index - 1]?.id};
+}
+
+function restoreSlideChange(payload) {
+  const change = slideChanges.get(payload.token);
+  if (!change || typeof payload.present !== "boolean") throw new Error("Slide history is unavailable; reload the editor");
+  if (change.present === payload.present) throw new Error("This slide history action is already applied");
+  changeSlidePresence(change, payload.present);
+  return editorState(change.selection);
+}
+
+function duplicateSlide(payload) {
+  const sets = allSlideSets();
+  const targetSet = sets.find((set) => set.id === payload.setId && set.editable);
+  if (!targetSet) {
+    throw new Error("Only current generated slides can be duplicated");
+  }
+  const config = readConfig(targetSet.configPath);
+  const index = config.slides.findIndex((slide) => slide.id === payload.slideId);
+  if (index < 0) {
+    throw new Error("Select a configured slide to duplicate");
+  }
+  const original = config.slides[index];
+  const screenshotRoots = [...new Set(Object.values(config.devices).map((device) =>
+    resolveFromConfig(targetSet.configPath, device.screenshotRoot)))];
+  const outputDirs = [...new Set(sets.filter((set) => set.editable
+    && set.configPath === targetSet.configPath && set.version === targetSet.version)
+    .map((set) => set.outputDir))];
+  let id;
+  let screenshot;
+  let suffix = 1;
+  do {
+    id = `${original.id}-copy${suffix === 1 ? "" : `-${suffix}`}`;
+    screenshot = `${id}${path.extname(original.screenshot)}`;
+    suffix += 1;
+  } while (config.slides.some((slide) => slide.id === id || slide.screenshot === screenshot)
+    || screenshotRoots.some((dir) => fs.existsSync(path.join(dir, screenshot)))
+    || outputDirs.some((dir) => fs.existsSync(path.join(dir, `${id}.png`))));
+
+  const copies = screenshotRoots.map((dir) => [
+    path.resolve(dir, original.screenshot), path.join(dir, screenshot)
+  ]);
+  for (const dir of outputDirs) {
+    const source = path.join(dir, `${original.id}.png`);
+    if (isFile(source)) copies.push([source, path.join(dir, `${id}.png`)]);
+  }
+  for (const [source] of copies) {
+    if (!isFile(source)) throw new Error(`Missing source screenshot: ${source}`);
+  }
+  const duplicate = cloneJSON(original);
+  duplicate.id = id;
+  duplicate.screenshot = screenshot;
+  config.slides.splice(index + 1, 0, duplicate);
+  const created = [];
+  try {
+    for (const [source, destination] of copies) {
+      fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
+      created.push(destination);
+    }
+    writeConfig(config, targetSet.configPath);
+  } catch (error) {
+    for (const file of created) fs.unlinkSync(file);
+    throw error;
+  }
+  const token = rememberSlideChange(targetSet, duplicate, index + 1, true);
+  return {
+    ...editorState({device: targetSet.device, version: targetSet.version, locale: targetSet.locale}),
+    slideChangeToken: token,
+    duplicatedSlideId: id
+  };
+}
+
 function reorderSlides(payload) {
   const sets = allSlideSets();
   const targetSet = sets.find((set) => set.id === payload.setId);
@@ -1394,6 +1526,23 @@ async function handleRequest(request, response) {
   if (request.method === "POST" && requestURL.pathname === "/api/preview") {
     const payload = JSON.parse(await readBody(request) || "{}");
     sendJSON(response, 200, previewCaption(payload));
+    return;
+  }
+
+  if (request.method === "POST" && requestURL.pathname === "/api/slides/delete") {
+    const payload = JSON.parse(await readBody(request) || "{}");
+    sendJSON(response, 200, deleteSlide(payload));
+    return;
+  }
+  if (request.method === "POST" && requestURL.pathname === "/api/slides/history") {
+    const payload = JSON.parse(await readBody(request) || "{}");
+    sendJSON(response, 200, restoreSlideChange(payload));
+    return;
+  }
+
+  if (request.method === "POST" && requestURL.pathname === "/api/slides/duplicate") {
+    const payload = JSON.parse(await readBody(request) || "{}");
+    sendJSON(response, 200, duplicateSlide(payload));
     return;
   }
 

@@ -172,3 +172,5 @@ xcrun swift Scripts/test-caption-layout.swift .build/debug/app-store-slides-tool
 ### Duplicate a slide
 
 Select an editable slide and click **Duplicate slide** beside **View all**. The editor saves current edits, inserts a copy immediately after the original, and selects it. Captions, device layouts, loupe settings, and screenshots are copied. Each copy gets a unique ID and independent screenshot files. Duplication applies to the selected config (including its configured devices and locales); separate config files are unchanged. Historical and imported slide sets remain read-only.
+
+Use **Delete slide** to remove the selected slide from this config. At least one slide must remain. **Undo** and **Redo** restore duplicate/delete actions, including order and selection, alongside caption and loupe edits within the selected set. History lasts for the current editor/server session; switching device, version, or locale starts a new history. Deletion retains source screenshots and temporarily parks rendered files for restoration.

@@ -29,6 +29,7 @@ const elements = {
   copyLoupeButton: document.getElementById("copyLoupeButton"),
   pasteLoupeButton: document.getElementById("pasteLoupeButton"),
   pasteLoupeLocalesButton: document.getElementById("pasteLoupeLocalesButton"),
+  deleteSlideButton: document.getElementById("deleteSlideButton"),
   duplicateSlideButton: document.getElementById("duplicateSlideButton"),
   saveSlideButton: document.getElementById("saveSlideButton"),
   viewAllButton: document.getElementById("viewAllButton"),
@@ -68,6 +69,9 @@ let loupeRenderTimer = null;
 let slidePreviewRequest = 0;
 let slidePreviewChain = Promise.resolve();
 let historyStack = [];
+let historySetId = null;
+let slideMutationPending = false;
+const slideBaselines = new Map();
 let redoStack = [];
 let isApplyingHistory = false;
 let captionColorHistoryAnchor = null;
@@ -217,6 +221,7 @@ function setBusy(isBusy) {
   const editable = Boolean(activeSet()?.editable);
   elements.saveSlideButton.disabled = isBusy || !editable;
   elements.duplicateSlideButton.disabled = isBusy || !editable;
+  elements.deleteSlideButton.disabled = isBusy || !editable || activeSet().slides.length <= 1;
   elements.viewAllButton.disabled = isBusy;
   elements.gallerySaveAllButton.disabled = isBusy || !editable;
   elements.loadingIndicator.hidden = !isBusy;
@@ -454,6 +459,8 @@ function cloneLoupe(loupe) {
 function currentSnapshot() {
   updateLoupeFromControls();
   return {
+    slideId: activeSlideId,
+    setId: activeSetId,
     caption: captionPaddingValues(),
     captionColor: globalCaptionColorValue(),
     backgroundColor: globalBackgroundColorValue(),
@@ -464,7 +471,8 @@ function currentSnapshot() {
 }
 
 function snapshotKey(snapshot) {
-  return JSON.stringify(snapshot);
+  const {undoSnapshot, structureChange, ...values} = snapshot;
+  return JSON.stringify(values);
 }
 
 function applyEditorState(nextState) {
@@ -504,18 +512,22 @@ function updateHistoryButtons(isBusy = false) {
 }
 
 function resetHistory() {
-  historyStack = activeSet()?.editable ? [currentSnapshot()] : [];
-  redoStack = [];
+  if (historySetId !== activeSetId) {
+    historyStack = activeSet()?.editable ? [currentSnapshot()] : [];
+    redoStack = [];
+    slideBaselines.clear();
+    historySetId = activeSetId;
+  }
+  slideBaselines.set(activeSlideId, currentSnapshot());
   updateHistoryButtons();
 }
 
 function pushHistorySnapshot(snapshot) {
-  const last = historyStack[historyStack.length - 1];
-  if (!last || snapshotKey(last) !== snapshotKey(snapshot)) {
-    historyStack.push(snapshot);
-    if (historyStack.length > 100) {
-      historyStack.shift();
-    }
+  const previous = slideBaselines.get(snapshot.slideId);
+  if (!previous || snapshotKey(previous) !== snapshotKey(snapshot)) {
+    historyStack.push({...snapshot, undoSnapshot: previous});
+    slideBaselines.set(snapshot.slideId, snapshot);
+    if (historyStack.length > 100) historyStack.shift();
     redoStack = [];
     updateHistoryButtons();
   }
@@ -567,6 +579,8 @@ async function applySnapshot(snapshot) {
   isApplyingHistory = true;
   setBusy(true);
   try {
+    activeSetId = snapshot.setId || activeSetId;
+    selectSlide(snapshot.slideId || activeSlideId);
     const set = activeSet();
     if (snapshot.loupeLocalesRestore) {
       applyEditorState(await api("/api/loupe/restore-locales", {
@@ -605,7 +619,8 @@ async function applySnapshot(snapshot) {
     const crossLocaleLoupeChange = Boolean(snapshot.loupeLocalesRestore || snapshot.loupePasteAllLocales);
     await previewSlide({
       recordHistory: false,
-      refreshAllSlides: crossLocaleLoupeChange
+      refreshAllSlides: crossLocaleLoupeChange,
+      throwOnError: true
     });
     if (crossLocaleLoupeChange) {
       renderSlideList();
@@ -614,32 +629,49 @@ async function applySnapshot(snapshot) {
       }
     }
   } finally {
+    slideBaselines.set(activeSlideId, currentSnapshot());
     isApplyingHistory = false;
     setBusy(false);
     updateHistoryButtons();
   }
 }
 
-async function undoEdit() {
-  if (historyStack.length < 2) {
-    return;
-  }
+async function applyStructureHistory(entry, redo) {
+  const change = entry.structureChange;
+  const present = redo ? change.present : !change.present;
+  const nextState = await api("/api/slides/history", {
+    method: "POST", body: JSON.stringify({token: change.token, present})
+  });
+  state = nextState;
+  activeSetId = state.activeSetId;
+  activeSlideId = redo ? change.afterSlideId : change.beforeSlideId;
+  render();
+}
 
-  const current = historyStack.pop();
-  redoStack.push(current);
-  updateHistoryButtons(true);
-  await applySnapshot(historyStack[historyStack.length - 1]);
+async function undoEdit() {
+  if (historyStack.length < 2) return;
+  const current = historyStack.at(-1);
+  setBusy(true);
+  try {
+    if (current.structureChange) await applyStructureHistory(current, false);
+    else await applySnapshot(current.undoSnapshot || historyStack.at(-2));
+    historyStack.pop();
+    redoStack.push(current);
+  } catch (error) { showToast(error.message); }
+  finally { setBusy(false); }
 }
 
 async function redoEdit() {
-  if (redoStack.length === 0) {
-    return;
-  }
-
-  const next = redoStack.pop();
-  historyStack.push(next);
-  updateHistoryButtons(true);
-  await applySnapshot(next);
+  if (!redoStack.length) return;
+  const next = redoStack.at(-1);
+  setBusy(true);
+  try {
+    if (next.structureChange) await applyStructureHistory(next, true);
+    else await applySnapshot(next);
+    redoStack.pop();
+    historyStack.push(next);
+  } catch (error) { showToast(error.message); }
+  finally { setBusy(false); }
 }
 
 const LOUPE_STEPPER_IDS = new Set([
@@ -861,6 +893,7 @@ async function previewSlide(options = {}) {
     if (requestId === slidePreviewRequest) {
       showToast(error.message);
     }
+    if (options.throwOnError) throw error;
   } finally {
     if (requestId === slidePreviewRequest) {
       setBusy(false);
@@ -1090,6 +1123,7 @@ function updateEditableState() {
   elements.controls.classList.toggle("read-only", !editable);
   elements.saveSlideButton.disabled = !editable;
   elements.duplicateSlideButton.disabled = !editable;
+  elements.deleteSlideButton.disabled = !editable || activeSet().slides.length <= 1;
   elements.gallerySaveAllButton.disabled = !editable;
   elements.contextLabel.textContent = editable
     ? `${activeSet().version} / ${activeSet().device} / ${activeSet().locale} · edits save to ${activeSet().configPath}`
@@ -1162,32 +1196,38 @@ function savePayload() {
   };
 }
 
-async function duplicateActiveSlide() {
-  if (!activeSet()?.editable) return;
+async function changeActiveSlide(action) {
+  if (!activeSet()?.editable || slideMutationPending) return;
+  slideMutationPending = true;
   clearTimeout(slidePreviewTimer);
   clearTimeout(loupeRenderTimer);
   setBusy(true);
   try {
     await slidePreviewChain;
     const payload = savePayload();
+    recordHistory();
     await api(`/api/slides/${encodeURIComponent(payload.slideId)}`, {
       method: "POST", body: JSON.stringify(payload)
     });
-    const result = await api("/api/slides/duplicate", {
+    const result = await api(`/api/slides/${action}`, {
       method: "POST", body: JSON.stringify({setId: payload.setId, slideId: payload.slideId})
     });
-    const {duplicatedSlideId, ...nextState} = result;
+    const {duplicatedSlideId, selectedSlideId, slideChangeToken, ...nextState} = result;
     state = nextState;
     activeSetId = state.activeSetId;
-    activeSlideId = duplicatedSlideId;
-    historyStack = [];
-    redoStack = [];
+    activeSlideId = duplicatedSlideId || selectedSlideId;
     render();
+    historyStack.push({...currentSnapshot(), structureChange: {
+      token: slideChangeToken, present: action === "duplicate",
+      beforeSlideId: payload.slideId, afterSlideId: activeSlideId
+    }});
+    redoStack = [];
     updateLastSavedLabel();
-    showToast("Slide duplicated — edit your new copy");
+    showToast(action === "duplicate" ? "Slide duplicated — edit your new copy" : "Slide deleted — Undo to restore");
   } catch (error) {
     showToast(error.message);
   } finally {
+    slideMutationPending = false;
     setBusy(false);
   }
 }
@@ -1643,7 +1683,8 @@ elements.loupeEnabled.addEventListener("change", () => {
 });
 
 elements.themeToggle.addEventListener("click", toggleTheme);
-elements.duplicateSlideButton.addEventListener("click", duplicateActiveSlide);
+elements.duplicateSlideButton.addEventListener("click", () => changeActiveSlide("duplicate"));
+elements.deleteSlideButton.addEventListener("click", () => changeActiveSlide("delete"));
 elements.saveSlideButton.addEventListener("click", saveActiveSlide);
 elements.viewAllButton.addEventListener("click", openGallery);
 elements.galleryCloseButton.addEventListener("click", closeGallery);

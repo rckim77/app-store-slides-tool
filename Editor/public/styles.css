@@ -465,9 +465,15 @@ h2 {
 .actions {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
   min-width: 0;
+}
+
+.actions > button {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .edit-actions {

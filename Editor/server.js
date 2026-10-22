@@ -146,6 +146,9 @@ function cloneJSON(value) {
 }
 
 function resolveFromConfig(configPath, value) {
+  if (value === "~" || value.startsWith("~/")) {
+    value = path.join(require("os").homedir(), value.slice(2));
+  }
   if (path.isAbsolute(value)) {
     return path.normalize(value);
   }
@@ -255,7 +258,7 @@ function slideEntry(config, configuredSlide, locale, filePath, deviceName) {
   };
 }
 
-function slidesForDeviceDir(config, deviceDir, locale, deviceName) {
+function slidesForDeviceDir(config, deviceDir, locale, deviceName, configuredOnly = false) {
   const slides = [];
   const seen = new Set();
 
@@ -267,6 +270,8 @@ function slidesForDeviceDir(config, deviceDir, locale, deviceName) {
     slides.push(slideEntry(config, configuredSlide, locale, filePath, deviceName));
     seen.add(configuredSlide.id);
   }
+
+  if (configuredOnly) return slides;
 
   for (const name of fs.readdirSync(deviceDir).sort()) {
     if (!imageExtensions.has(path.extname(name).toLowerCase())) {
@@ -394,7 +399,8 @@ function generatedSlideSets(config, configPath, includeReadOnlyLocales) {
             continue;
           }
           const deviceDir = path.join(deviceTypeDir, locale);
-          const slides = slidesForDeviceDir(config, deviceDir, locale, deviceName);
+          const slides = slidesForDeviceDir(config, deviceDir, locale, deviceName,
+            version === config.version && isWithin(editableOutputRoot, deviceDir));
 
           if (slides.length === 0) {
             continue;
@@ -756,7 +762,9 @@ function sanitizeCaption(value, existing) {
 }
 
 function localeFromConfigPath(configPath) {
-  return path.basename(configPath, path.extname(configPath));
+  const locale = path.basename(configPath, path.extname(configPath));
+  const config = readConfig(configPath);
+  return configHasLocale(config, locale) ? locale : config.defaultLocale;
 }
 
 function allLocaleConfigEntries() {

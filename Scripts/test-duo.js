@@ -22,16 +22,18 @@ function chunk(type, data) {
   const checksum = Buffer.alloc(4); checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
   return Buffer.concat([size, name, data, checksum]);
 }
-function png(width, height) {
+function png(width, height, screen) {
   const header = Buffer.alloc(13);
-  header.writeUInt32BE(width); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 2;
-  const rows = Buffer.alloc((width * 3 + 1) * height);
+  const channels = screen ? 4 : 3;
+  header.writeUInt32BE(width); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = screen ? 6 : 2;
+  const rows = Buffer.alloc((width * channels + 1) * height);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const offset = y * (width * 3 + 1) + x * 3 + 1;
+      const offset = y * (width * channels + 1) + x * channels + 1;
       rows[offset] = x < width / 2 ? 240 : 20;
       rows[offset + 1] = y < height / 2 ? 100 : 220;
       rows[offset + 2] = 90;
+      if (screen) rows[offset + 3] = x >= screen.x && x < screen.x + screen.width && y >= screen.y && y < screen.y + screen.height ? 0 : 255;
     }
   }
   return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", header), chunk("IDAT", zlib.deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
@@ -49,8 +51,8 @@ const formats = [
   [2853,2007,"Inner Open Landscape",120,120]
 ];
 try {
-  for (const [, , label] of formats) {
-    assert.ok(fs.existsSync(path.join(root, `Assets/Frames/iPhone Duo - Night Sky - ${label}.png`)), "Import Apple's licensed Duo bezels with Scripts/import-duo-frames.js before running render checks (see README)");
+  for (const [width, height, label, x, y] of formats) {
+    fs.writeFileSync(path.join(temp, `${label}.png`), png(width + x * 2, height + y * 2, {x, y, width, height}));
   }
   const config = {
     name: "Synthetic regression fixture", version: "v1.0.0", defaultLocale: "en_US", outputRoot: path.join(temp, "out"),
@@ -59,7 +61,7 @@ try {
   };
   for (const [width,height,label,x,y] of formats) {
     fs.writeFileSync(path.join(temp,"fixture.png"),png(width,height));
-    config.devices["iphone-duo"]={appStorePreset:"iphone-duo",canvas:{width,height},screenshotRoot:temp,frame:{image:path.join(root,`Assets/Frames/iPhone Duo - Night Sky - ${label}.png`),screen:{x,y,width,height},scale:0.4,top:250}};
+    config.devices["iphone-duo"]={appStorePreset:"iphone-duo",canvas:{width,height},screenshotRoot:temp,frame:{image:path.join(temp,`${label}.png`),screen:{x,y,width,height},scale:0.4,top:250}};
     run(config,["--validate-only"]);
     run(config);
     const output=fs.readFileSync(path.join(temp,"out/v1.0.0/iphone-duo/en_US/fixture.png"));

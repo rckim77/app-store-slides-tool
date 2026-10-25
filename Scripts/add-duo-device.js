@@ -4,16 +4,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
 const options = { display: "inner", orientation: "landscape" };
-const allowed = new Set(["--config", "--config-dir", "--screenshot-root", "--display", "--orientation"]);
+const allowed = new Set(["--config", "--config-dir", "--screenshot-root", "--display", "--orientation", "--caption-offset"]);
 try {
   for (let index = 0; index < args.length; index += 2) {
     const name = args[index];
-    if (!allowed.has(name) || !args[index + 1]) throw new Error("Usage: node Scripts/add-duo-device.js (--config <json> | --config-dir <directory>) --screenshot-root <captures> [--display inner|outer] [--orientation portrait|landscape]");
+    if (!allowed.has(name) || !args[index + 1]) throw new Error("Usage: node Scripts/add-duo-device.js (--config <json> | --config-dir <directory>) --screenshot-root <captures> [--display inner|outer] [--orientation portrait|landscape] [--caption-offset pixels]");
     options[name.slice(2)] = args[index + 1];
   }
   if (Boolean(options.config) === Boolean(options["config-dir"]) || !options["screenshot-root"]) throw new Error("Choose exactly one of --config or --config-dir, and provide --screenshot-root");
   if (options["config-dir"] && !options["screenshot-root"].includes("{locale}")) throw new Error("With --config-dir, --screenshot-root must contain {locale} so each locale uses its own captures");
   if (!["inner", "outer"].includes(options.display) || !["portrait", "landscape"].includes(options.orientation)) throw new Error("Choose display inner|outer and orientation portrait|landscape");
+  const explicitOffset = options["caption-offset"] === undefined ? undefined : Number(options["caption-offset"]);
+  if (explicitOffset !== undefined && !Number.isFinite(explicitOffset)) throw new Error("--caption-offset must be a finite number of pixels");
   const configPaths = options.config ? [path.resolve(options.config)] : fs.readdirSync(options["config-dir"])
     .filter(name => name.endsWith(".json"))
     .sort()
@@ -30,7 +32,19 @@ try {
     if (options["screenshot-root"].includes("{locale}") && !/^[A-Za-z0-9_-]+$/.test(config.defaultLocale || "")) throw new Error(`${configPath}: a valid defaultLocale is required for {locale}`);
     const screenshotRoot = options["screenshot-root"].replaceAll("{locale}", config.defaultLocale);
     const caption = config.caption;
-    const top = Math.ceil(caption.topPadding + caption.fontSize * caption.lineHeight * caption.maxLines + (caption.bottomPadding || 0));
+    let largestTopOffset = 0;
+    for (const slide of config.slides) {
+      const existing = slide.layoutOffsets?.["iphone-duo"] || {};
+      const isTop = (slide.captionPositions?.["iphone-duo"] || "top") === "top";
+      const captionY = explicitOffset ?? existing.captionY ?? (inner && landscape && isTop ? 48 : 0);
+      if (isTop) largestTopOffset = Math.max(largestTopOffset, captionY);
+      if (captionY !== 0 || explicitOffset !== undefined || existing.captionY !== undefined) {
+        slide.layoutOffsets = {...slide.layoutOffsets, "iphone-duo": {...existing, captionY}};
+      }
+    }
+    // Keep a minimum gap when lowering the caption in configs with tight padding.
+    const gap = Math.max(caption.bottomPadding || 0, largestTopOffset > 0 ? largestTopOffset + 24 : 0);
+    const top = Math.ceil(caption.topPadding + caption.fontSize * caption.lineHeight * caption.maxLines + gap);
     const frameWidth = width + (inner ? 240 : (landscape ? 160 : 176));
     const frameHeight = height + (inner ? 240 : (landscape ? 176 : 160));
     const scale = Math.min(width * 0.92 / frameWidth, (height - top - height * 0.03) / frameHeight);

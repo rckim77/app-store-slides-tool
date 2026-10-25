@@ -31,14 +31,21 @@ try {
     const original = originals.get(locale);
     assert.deepEqual(actual.devices.iphone, original.devices.iphone);
     assert.deepEqual(actual.devices.ipad, original.devices.ipad);
-    assert.deepEqual(actual.slides, original.slides);
+    assert.deepEqual(actual.slides, original.slides.map(slide => ({...slide, layoutOffsets: {"iphone-duo": {captionY: 48}}})));
     assert.deepEqual(actual.caption, original.caption);
     assert.equal(actual.defaultLocale, locale);
     assert.equal(actual.version, original.version);
     assert.equal(actual.outputRoot, original.outputRoot);
     assert.equal(actual.devices["iphone-duo"].screenshotRoot, path.join(temp, "captures", locale, "raw"));
     assert.deepEqual(actual.devices["iphone-duo"].canvas, {width: 2853, height: 2007});
+    assert.match(actual.devices["iphone-duo"].frame.image, /Inner Open Landscape\.png$/);
+    const captionHeight = actual.caption.fontSize * actual.caption.lineHeight * actual.caption.maxLines;
+    assert.ok(actual.devices["iphone-duo"].frame.top >= actual.caption.topPadding + captionHeight + 48 + 24);
   }
+  const firstPass = fs.readFileSync(path.join(configs, "en_US.json"), "utf8");
+  result = run("--config-dir", configs, "--screenshot-root", captureTemplate);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(path.join(configs, "en_US.json"), "utf8"), firstPass, "Repeating the helper must not accumulate caption offsets");
   result = run("--config-dir", configs, "--screenshot-root", path.join(temp, "english-only"));
   assert.equal(result.status, 1);
   assert.match(result.stderr, /must contain \{locale\}/);
@@ -53,6 +60,33 @@ try {
   result = run("--config", englishPath, "--screenshot-root", path.join(temp, "single"));
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(fs.readFileSync(englishPath)).devices["iphone-duo"].screenshotRoot, path.join(temp, "single"));
+
+  const customized = JSON.parse(fs.readFileSync(englishPath));
+  customized.slides[0].layoutOffsets = {iphone: {captionY: 7}, ipad: {captionY: 12}, "iphone-duo": {captionY: 32, frameY: 5}};
+  fs.writeFileSync(englishPath, JSON.stringify(customized));
+  result = run("--config", englishPath, "--screenshot-root", path.join(temp, "single"));
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(englishPath)).slides, customized.slides, "Existing per-device placement must survive");
+  result = run("--config", englishPath, "--screenshot-root", path.join(temp, "single"), "--caption-offset", "0");
+  assert.equal(result.status, 0, result.stderr);
+  const reset = JSON.parse(fs.readFileSync(englishPath));
+  assert.deepEqual(reset.slides[0].layoutOffsets, {iphone: {captionY: 7}, ipad: {captionY: 12}, "iphone-duo": {captionY: 0, frameY: 5}});
+  const beforeInvalid = fs.readFileSync(englishPath, "utf8");
+  result = run("--config", englishPath, "--screenshot-root", path.join(temp, "single"), "--caption-offset", "NaN");
+  assert.equal(result.status, 1);
+  assert.equal(fs.readFileSync(englishPath, "utf8"), beforeInvalid);
+
+  // A bottom caption or explicitly selected alternative display retains its placement.
+  const alternate = {...originals.get("en_US"), slides: [{...originals.get("en_US").slides[0], captionPositions: {"iphone-duo": "bottom"}}]};
+  fs.writeFileSync(englishPath, JSON.stringify(alternate));
+  result = run("--config", englishPath, "--screenshot-root", path.join(temp, "single"));
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(englishPath)).slides, alternate.slides);
+  fs.writeFileSync(englishPath, JSON.stringify(originals.get("en_US")));
+  result = run("--config", englishPath, "--screenshot-root", path.join(temp, "single"), "--display", "outer", "--orientation", "portrait");
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(englishPath)).devices["iphone-duo"].canvas, {width: 1398, height: 2034});
+  assert.deepEqual(JSON.parse(fs.readFileSync(englishPath)).slides, originals.get("en_US").slides);
 
   const source = fs.readFileSync(path.join(root, "Editor/public/editor.js"), "utf8");
   const context = vm.createContext({});

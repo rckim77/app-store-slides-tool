@@ -203,6 +203,8 @@ The editor has three device types: **iPhone (Dynamic Island)** (`iphone`, the ex
 
 Apple's [App Store screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications/) and `asc screenshots sizes --all` list four accepted Duo sizes. Use `appStorePreset: "iphone-duo"` for either display in either orientation. The App Store inner-display export dimensions differ from the hardware resolution on the [technical specifications page](https://www.apple.com/iphone-duo/specs/); use the App Store dimensions for the slide canvas.
 
+Default to **one unfolded device per slide**, using the **2853 × 2007 inner-landscape canvas** consistently across the set. A paired front/inner composition and a separate portrait set are unnecessary for this starter layout. Apple lists portrait and landscape as accepted alternatives; its published screenshot requirements do not mandate both orientations.
+
 Capture the app on the selected Duo display and match its orientation to the frame. The renderer checks the source aspect ratio so a regular iPhone screenshot cannot silently stretch into a Duo bezel. Changing the preset alone does not make an app capture a Duo screenshot.
 
 For **Inner Open Landscape**, explicitly select the inner display, landscape orientation, and a fully open **180° hinge angle** in Device Hub before capturing. Keep that pose for every slide. A partially folded inner display produces the same pixel dimensions, so the renderer's aspect-ratio check and App Store validation cannot detect the wrong pose. Verify the native UI and save a Device Hub pose reference with the capture evidence before rendering. Standard sheets should be centered in the fully open inner display; sheets shifted to one side can indicate fold avoidance. See Apple's [sheet and fold-avoidance guidance](https://developer.apple.com/videos/play/tech-talks/111466/?time=516).
@@ -232,7 +234,9 @@ Add the device to an existing config while preserving its other devices and slid
 node Scripts/add-duo-device.js --config /path/to/config.json --screenshot-root /path/to/duo/en_US/raw --display inner --orientation landscape
 ```
 
-The helper fits the official frame beneath the existing caption layout. Adding a device does not copy another device's loupe settings; configure the Duo loupe in the editor after rendering.
+The helper defaults to inner landscape and fits one official frame beneath the existing caption layout. New top captions receive `layoutOffsets["iphone-duo"].captionY: 48`, placing them slightly lower in the space above the device. It preserves existing offsets and other devices, and reserves at least 24 pixels between the configured caption block and the frame. Bottom captions and explicitly selected alternative display/orientation layouts keep their existing placement defaults. Adding a device does not copy another device's loupe settings; configure the Duo loupe in the editor after rendering.
+
+Adjust the Duo caption later in each slide's `layoutOffsets`, or explicitly reset/set it for every slide with `--caption-offset 0` / `--caption-offset 48`. Rerunning without that option preserves manual placement and never adds the offset again. Global caption padding remains unchanged.
 
 Duo supports the same locales as the other device types. For one config per locale, add it to the whole config directory in one command. `{locale}` is replaced with each config's `defaultLocale`; it is required in directory mode to keep localized screenshot inputs separate. Existing translations, devices, and loupe settings are preserved.
 
@@ -242,7 +246,7 @@ node Scripts/add-duo-device.js --config-dir /path/to/_configs --screenshot-root 
 
 Capture the app in each locale and render each config using its own locale code. Adding a config does not create or translate screenshots. The editor shows the version's locale matrix for each device; locales without generated slides are disabled and labeled **(N/A)** until their output is ready.
 
-Equivalent example addition (inner display, landscape):
+Equivalent device addition (one inner display, landscape):
 
 ```json
 "iphone-duo": {
@@ -258,6 +262,14 @@ Equivalent example addition (inner display, landscape):
   }
 }
 ```
+
+For each slide, the helper also adds this editable placement (leaving other device offsets intact):
+
+```json
+"layoutOffsets": { "iphone-duo": { "captionY": 48 } }
+```
+
+See [the placeholder-only layout example](Examples/iphone-duo-layout/README.md) for the selected composition, research references, and a preview renderer that requires no simulator or app captures.
 
 Tune frame scale/top for your captions, then render and validate:
 

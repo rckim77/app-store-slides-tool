@@ -50,6 +50,7 @@ Rendered slides are written to the `outputRoot` path in the config, for example:
 - Per-device frame images and screen rectangles
 - Solid background colors
 - Per-slide captions, localized by locale code
+- Per-slide, per-device caption position: top or bottom
 - Per-slide screenshot inputs
 
 ## Visual Editor
@@ -61,6 +62,8 @@ The local browser editor supports light and dark mode, per-slide editing, and a 
 ![App Store slide editor in light mode](docs/editor-ui-duo-light.jpg)
 
 Device, locale, and version selectors sit in the left sidebar with global color controls (caption text color, slide color), caption padding steppers, and slide navigation. The center shows a live preview; the right panel edits the selected slide (caption, frame, loupe, clipboard, layout).
+
+The toolbar starts with **View all**, followed by **Undo**, **Redo**, **Delete slide**, **Duplicate slide**, and **Save slide**. The preview fits the window, including its shadow. Caption previews wait for a pause in typing and preserve spaces.
 
 ### Slide editor (dark mode)
 
@@ -95,7 +98,9 @@ Then open:
 http://127.0.0.1:4321/?device=iphone&version=v1.11.0&locale=en_US
 ```
 
-The editor renders the current slide set on startup (use `--no-render` to skip when PNGs are already on disk), lets you pick a slide, change caption padding and loupe settings, and save. **Caption text color**, **slide color**, and **caption padding** in the sidebar apply across every slide and locale. Slide reordering also applies across every locale config. Loupe settings are stored per slide and per device, so editing an iPhone loupe does not change the iPad loupe for that slide. Loupe settings can be copied and pasted across slides on the same device type; use **Paste to all locales** to apply the current slide’s loupe to that slide ID in every locale config for the active device. Saving updates the locale config JSON and rerenders the output PNGs for the selected editor version.
+The editor renders the current slide set on startup (use `--no-render` to skip when PNGs are already on disk), lets you pick a slide, change caption padding and loupe settings, and save. **Caption text color**, **slide color**, and **caption padding** in the sidebar apply across every slide and locale. Slide reordering also applies across every locale config. Loupe settings are stored per slide and per device, so editing an iPhone loupe does not change the iPad loupe for that slide. Loupe settings can be copied and pasted across slides on the same device type; use **Paste to all locales** to apply the current slide’s loupe to that slide ID in every locale config for the active device. Choose **Top** or **Bottom** under **Caption position** to place the selected slide’s caption above or below its screenshot. The choice is independent for iPhone and iPad and saved in the current locale config. It supports live preview, undo/redo, **Save slide**, and **Save all**. Existing slides default to Top. **Outer padding** measures from the caption to the nearest canvas edge; **Screenshot gap** separates the caption from the device frame. Bottom keeps the frame scale and mirrors its placement, cropping the top of an oversized frame as needed.
+
+Saving updates the locale config JSON and rerenders the output PNGs for the selected editor version.
 
 Generated folders are editable when the selected images belong to one of the loaded configs' current `version`, device, output root, and locale. Other discovered folders are shown read-only.
 
@@ -124,6 +129,55 @@ Generated slides are written as:
 ```text
 <outputRoot>/<Version>/<Device>/<Locale>/
 ```
+
+Set `caption.fontName` to an installed PostScript font name (for example,
+`ArialRoundedMTBold`) to match existing artwork. When omitted, captions retain
+the system font and `fontWeight`. A named font controls its own weight. Missing
+fonts produce a validation error instead of silently changing the design.
+
+For independent caption placement, add `captionPositions` to a slide:
+
+```json
+{
+  "id": "01-hints",
+  "screenshot": "hints.png",
+  "captions": { "en_US": "AI-powered\nHints" },
+  "captionPositions": { "iphone": "bottom", "ipad": "top" }
+}
+```
+
+Omitted devices use `top`. The renderer accepts only `top` and `bottom`. The existing
+`caption.topPadding` becomes the outer margin for either position, while
+`caption.bottomPadding` remains the screenshot gap. `frame.top` sets the minimum
+frame inset from that same edge. Bottom mirrors the screenshot placement without
+flipping the screenshot or the order of caption lines.
+
+For precise alignment with existing artwork, a slide can optionally set
+`layoutOffsets`, such as `"layoutOffsets": { "ipad": { "captionY": 14, "frameY": -30 } }`.
+Offsets are measured in output canvas pixels: positive values move down and
+negative values move up. Each offset defaults to zero, is independent per slide
+and device, and is added after the Top/Bottom placement. Configure these values
+in JSON; the editor preserves them when saving. Large offsets can crop content
+or bring the caption and screenshot closer together.
+
+## Regression checks
+
+After `swift build`, run the editor checks and renderer pixel checks:
+
+```sh
+node Scripts/test-editor-loupes.js
+node Scripts/test-editor-caption-position.js
+node Scripts/test-editor-api.js
+xcrun swift Scripts/test-caption-layout.swift .build/debug/app-store-slides-tool
+```
+
+### Duplicate a slide
+
+Select an editable slide and click **Duplicate slide** in the toolbar. The editor saves current edits, inserts a copy immediately after the original, and selects it. Captions, device layouts, loupe settings, and screenshots are copied. Each copy gets a unique ID and independent screenshot files. Duplication applies to the selected config (including its configured devices and locales); separate config files are unchanged. Historical and imported slide sets remain read-only.
+
+Use **Delete slide** to remove the selected slide from this config. At least one slide must remain. **Undo** and **Redo** restore duplicate/delete actions, including order and selection, alongside caption and loupe edits within the selected set. History lasts for the current editor/server session; switching device, version, or locale starts a new history. Deletion retains source screenshots and temporarily parks rendered files for restoration.
+
+Caption previews update after a 500 ms typing pause, preserve spaces, and leave newer drafts untouched when an older render finishes. The slide preview fits the available viewport on load and resize, including space for its shadow.
 
 Frame paths refer to local assets, usually under `Assets/Frames/`.
 

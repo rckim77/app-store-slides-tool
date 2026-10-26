@@ -575,9 +575,12 @@ h2 {
   transition: opacity 160ms ease, transform 160ms ease;
 }
 
-.stage.device-ipad,
-.stage.device-duo {
+.stage.device-ipad {
   max-width: min(100%, 882px);
+}
+
+.stage.device-duo {
+  max-width: 100%;
 }
 
 .stage.is-loading {

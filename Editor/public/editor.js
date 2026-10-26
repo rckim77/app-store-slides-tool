@@ -257,8 +257,11 @@ function fitStageToViewport() {
   const top = wrapper.getBoundingClientRect().top + window.scrollY + grid.scrollTop;
   const availableHeight = Math.max(40, window.innerHeight - Math.max(0, top) - vertical - 24);
   const canvas = canvasSize();
+  const device = activeSet().device;
+  const maxWidth = device === "iphone-duo" && canvas.width > canvas.height
+    ? Infinity : device === "ipad" ? 882 : 620;
   const width = Math.max(1, Math.min(wrapper.clientWidth - horizontal,
-    availableHeight * canvas.width / canvas.height, activeSet().device === "ipad" ? 882 : 620));
+    availableHeight * canvas.width / canvas.height, maxWidth));
   elements.stage.style.width = `${width}px`;
 }
 

@@ -1,0 +1,23 @@
+{
+  "status": "layout-prototype",
+  "locale": "en_US",
+  "displayType": "APP_IPHONE_DUO",
+  "canvas": { "width": 2853, "height": 2007 },
+  "background": "#8DCAF7",
+  "caption": {
+    "lines": ["Reclaim", "Storage Space"],
+    "fontSize": 164,
+    "lineHeight": 1.12,
+    "top": 144,
+    "color": "#000000"
+  },
+  "displayArea": { "x": 110, "y": 590, "width": 2633, "height": 1245 },
+  "displayGap": 88,
+  "bezel": 22,
+  "layouts": [
+    { "id": "02-inner", "title": "Single landscape layout", "displays": ["inner"] }
+  ],
+  "displays": {
+    "inner": { "width": 2853, "height": 2007, "label": "Inner landscape", "corners": [204, 204, 204, 204] }
+  }
+}

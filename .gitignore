@@ -2,3 +2,7 @@
 .swiftpm/
 DerivedData/
 *.DS_Store
+
+# Download licensed Apple bezel resources directly; keep all source assets local.
+Assets/Frames/*
+!Assets/Frames/README.md

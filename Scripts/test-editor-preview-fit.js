@@ -9,4 +9,11 @@ wrapper.getBoundingClientRect=()=>({top:620});fit();width=parseFloat(stage.style
 context.activeSet=()=>({device:'ipad'});context.canvasSize=()=>({width:2732,height:2048});wrapper.getBoundingClientRect=()=>({top:180});wrapper.clientWidth=1000;fit();width=parseFloat(stage.style.width);assert.ok(width<=882);assert.ok(180+52+width*2048/2732+24<=900.01);
 context.window.scrollY=100;wrapper.getBoundingClientRect=()=>({top:80});fit();assert.equal(parseFloat(stage.style.width),width,'Scrolling must not change the fitted size');
 context.window.innerHeight=700;fit();assert.ok(parseFloat(stage.style.width)<width,'Resizing must refit the preview');
-console.log('Preview fit: portrait, landscape iPad, stacked layout, scrolling and resize checks passed');
+context.window.innerHeight=1400;context.window.scrollY=0;wrapper.getBoundingClientRect=()=>({top:180});wrapper.clientWidth=1600;
+context.activeSet=()=>({device:'iphone-duo'});context.canvasSize=()=>({width:2853,height:2007});fit();
+width=parseFloat(stage.style.width);assert.equal(width,1552,'Landscape Duo must fill the available width instead of using the phone cap');
+context.window.innerHeight=700;fit();width=parseFloat(stage.style.width);assert.ok(width<1552);assert.ok(180+52+width*2007/2853+24<=700.01,'Duo must still fit vertically');
+wrapper.clientWidth=600;fit();assert.ok(parseFloat(stage.style.width)<=552,'Duo must fit narrow layouts');
+context.window.innerHeight=1400;wrapper.clientWidth=1600;context.canvasSize=()=>({width:1398,height:2034});fit();assert.equal(parseFloat(stage.style.width),620,'Portrait Duo retains the phone limit');
+const css=fs.readFileSync(path.join(__dirname,'../Editor/public/styles.css'),'utf8');assert.match(css,/\.stage\.device-duo\s*\{\s*max-width: 100%;/);
+console.log('Preview fit: portrait, landscape iPad and Duo, stacked layout, scrolling and resize checks passed');

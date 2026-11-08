@@ -274,6 +274,9 @@ func nsColor(hex: String) throws -> NSColor {
 
 func font(for caption: CaptionConfig) throws -> NSFont {
     if let name = caption.fontName {
+        if ["dm sans", "dmsans"].contains(name.lowercased()) {
+            return try BundledCaptionFonts.dmSans(size: caption.fontSize, weight: caption.fontWeight)
+        }
         guard let font = NSFont(name: name, size: caption.fontSize) else {
             throw ToolError.invalidConfig("Caption font '\(name)' is not installed")
         }

@@ -10,6 +10,9 @@ let package = Package(
         .executable(name: "app-store-slides-tool", targets: ["AppStoreSlidesTool"])
     ],
     targets: [
-        .executableTarget(name: "AppStoreSlidesTool")
+        .executableTarget(
+            name: "AppStoreSlidesTool",
+            resources: [.copy("Resources/Fonts")]
+        )
     ]
 )

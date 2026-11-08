@@ -1,5 +1,6 @@
 // Run after swift build: xcrun swift Scripts/test-caption-layout.swift .build/debug/app-store-slides-tool
 import AppKit
+import CoreText
 import Foundation
 
 func check(_ condition: @autoclosure () -> Bool, _ message: String) {
@@ -135,6 +136,41 @@ config["caption"] = namedCaption
 let rounded = try render(["iphone": "bottom", "ipad": "bottom"])
 check(rounded["iphone"] != allBottom["iphone"], "Named font must change rendered caption pixels")
 for data in rounded.values { verify(data, bottom: true, cropped: true) }
+namedCaption["fontName"] = "DM Sans"
+namedCaption["fontWeight"] = "regular"
+config["caption"] = namedCaption
+let dmRegular = try render(["iphone": "bottom", "ipad": "bottom"])
+check(dmRegular["iphone"] != allBottom["iphone"], "Bundled DM Sans must change system-font output")
+for data in dmRegular.values { verify(data, bottom: true, cropped: true) }
+namedCaption["fontWeight"] = "semibold"
+config["caption"] = namedCaption
+let dmSemibold = try render(["iphone": "bottom", "ipad": "bottom"])
+check(dmSemibold["iphone"] != dmRegular["iphone"], "DM Sans must honor caption weight")
+namedCaption.removeValue(forKey: "fontWeight")
+config["caption"] = namedCaption
+let dmDefault = try render(["iphone": "bottom", "ipad": "bottom"])
+namedCaption["fontName"] = "DMSans"
+namedCaption["fontWeight"] = "bold"
+config["caption"] = namedCaption
+let dmBold = try render(["iphone": "bottom", "ipad": "bottom"])
+check(dmBold == dmDefault, "DM Sans alias and default bold weight must match")
+check(dmBold["iphone"] != dmSemibold["iphone"], "Bold must differ from semibold")
+var localizedSlide = (config["slides"] as! [[String: Any]])[0]
+localizedSlide["captions"] = ["en_US": "Mañana\nGrößer"]
+config["slides"] = [localizedSlide]
+for data in try render(nil).values {
+    let captionY = coloredMinY(data, blue: true)
+    check(captionY >= 80 && captionY < coloredMinY(data, blue: false),
+          "Accented DM Sans captions must render above the frame")
+}
+let fontURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+    .appendingPathComponent("Sources/AppStoreSlidesTool/Resources/Fonts/DMSans.ttf")
+let descriptors = CTFontManagerCreateFontDescriptorsFromURL(fontURL as CFURL) as! [CTFontDescriptor]
+let bundledFont = CTFontCreateWithFontDescriptor(descriptors[0], 90, nil)
+let characters = Array("English Español alemán ÁÉÍÓÚÜÑáéíóúüñÄÖÜäöüßẞ¿¡".utf16)
+var glyphs = [CGGlyph](repeating: 0, count: characters.count)
+check(CTFontGetGlyphsForCharacters(bundledFont, characters, &glyphs, characters.count),
+      "Bundled DM Sans must contain English, Spanish, and German caption glyphs")
 namedCaption["fontName"] = "MissingAppStoreCaptionFont"
 config["caption"] = namedCaption
 _ = try render(nil, valid: false)

@@ -130,10 +130,14 @@ Generated slides are written as:
 <outputRoot>/<Version>/<Device>/<Locale>/
 ```
 
-Set `caption.fontName` to an installed PostScript font name (for example,
-`ArialRoundedMTBold`) to match existing artwork. When omitted, captions retain
-the system font and `fontWeight`. A named font controls its own weight. Missing
-fonts produce a validation error instead of silently changing the design.
+Choose a caption font with `caption.fontName`:
+
+- Omit it for the system font, using `caption.fontWeight`
+- Set `"DM Sans"` (or `"DMSans"`) for bundled DM Sans, using `caption.fontWeight` (bold by default)
+- Set an installed PostScript name, such as `"ArialRoundedMTBold"`, for a font with its own weight
+
+Previews and exports use the same font. Missing fonts fail validation. DM Sans
+and its SIL Open Font License are in `Sources/AppStoreSlidesTool/Resources/Fonts/`.
 
 For independent caption placement, add `captionPositions` to a slide:
 

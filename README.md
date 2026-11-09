@@ -41,6 +41,12 @@ Rendered slides are written to the `outputRoot` path in the config, for example:
 /path/to/your-app/build/AppStore/v1.11.0/iphone/en_US/
 ```
 
+## iPhone display categories
+
+Use `appStorePreset: "iphone-6.3"` for Apple's **iPhone with Dynamic Island (medium display)** category. It accepts portrait canvases of **1206 × 2622** or **1179 × 2556**, plus their landscape equivalents. The existing `iphone-6.9` preset remains available for the large-display category.
+
+The finished canvas determines the upload category. Existing compatible screenshot/frame inputs can be reused; when changing canvas size, adjust caption sizing, spacing, and frame placement proportionally. Use `--validate-only` before rendering. See [Apple's screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications).
+
 ## What it renders
 
 - App Store-valid iPhone 6.9-inch canvases: `1290x2796` or `1320x2868`

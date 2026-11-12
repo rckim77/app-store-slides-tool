@@ -1244,12 +1244,17 @@ function duplicateSlide(payload) {
     screenshot = `${id}${path.extname(original.screenshot)}`;
     suffix += 1;
   } while (config.slides.some((slide) => slide.id === id || slide.screenshot === screenshot)
-    || screenshotRoots.some((dir) => fs.existsSync(path.join(dir, screenshot)))
+    || screenshotRoots.some((dir) => fs.existsSync(path.join(dir, screenshot))
+      || fs.existsSync(path.join(dir, screenshot + ".capture.json")))
     || outputDirs.some((dir) => fs.existsSync(path.join(dir, `${id}.png`))));
 
   const copies = screenshotRoots.map((dir) => [
     path.resolve(dir, original.screenshot), path.join(dir, screenshot)
   ]);
+  // Provenance hashes content, not filenames, so a byte-identical copy keeps its evidence.
+  for (const [source, destination] of [...copies]) {
+    if (isFile(source + ".capture.json")) copies.push([source + ".capture.json", destination + ".capture.json"]);
+  }
   for (const dir of outputDirs) {
     const source = path.join(dir, `${original.id}.png`);
     if (isFile(source)) copies.push([source, path.join(dir, `${id}.png`)]);

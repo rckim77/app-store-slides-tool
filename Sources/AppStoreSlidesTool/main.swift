@@ -1,5 +1,7 @@
 import AppKit
 import Foundation
+import CryptoKit
+import ImageIO
 
 struct SlideConfig: Decodable {
     let name: String
@@ -33,6 +35,25 @@ struct DeviceConfig: Decodable {
     let canvas: SizeConfig
     let screenshotRoot: String
     let frame: FrameConfig
+    let captureRequirements: CaptureRequirements?
+}
+
+struct CaptureRequirements: Decodable {
+    let deviceTypeIdentifier: String
+    let runtimeVersion: String
+}
+
+struct CaptureProvenance: Decodable {
+    let schemaVersion: Int
+    let screenshotSHA256: String
+    let width: Int
+    let height: Int
+    let orientation: String
+    let deviceTypeIdentifier: String
+    let runtimeIdentifier: String
+    let runtimeVersion: String
+    let simulatorUDID: String
+    let capturedAt: String
 }
 
 struct SizeConfig: Decodable {
@@ -42,6 +63,7 @@ struct SizeConfig: Decodable {
 
 struct FrameConfig: Decodable {
     let image: String
+    let deviceTypeIdentifier: String?
     let screen: RectConfig
     let screenCornerRadius: CGFloat?
     let scale: CGFloat
@@ -241,6 +263,57 @@ func validate(device name: String, config: DeviceConfig) throws {
         guard config.frame.screen.width > 0, config.frame.screen.height > 0,
               screenRatio.isFinite, abs(screenRatio / canvasRatio - 1) < 0.01 else {
             throw ToolError.invalidConfig("Duo frame screen must match the selected display and canvas orientation")
+        }
+    }
+}
+
+// Geometry catches stretching; matching aspect ratios alone cannot identify a model or OS.
+func validateCapture(slide: Slide, device: DeviceConfig, screenshotURL: URL, frameImage: NSImage) throws {
+    let screen = device.frame.screen
+    guard screen.x >= 0, screen.y >= 0, screen.width > 0, screen.height > 0,
+          screen.x + screen.width <= frameImage.size.width,
+          screen.y + screen.height <= frameImage.size.height else {
+        throw ToolError.invalidConfig("\(slide.id): frame screen rectangle must be positive and inside the frame image")
+    }
+    if let source = CGImageSourceCreateWithURL(screenshotURL as CFURL, nil),
+       let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+       let orientation = properties[kCGImagePropertyOrientation] as? Int, orientation != 1 {
+        throw ToolError.invalidConfig("\(slide.id): screenshot has EXIF orientation; capture upright pixel data with simctl instead of rotating via metadata")
+    }
+    let screenshot = try image(at: screenshotURL)
+    let width = Int(screenshot.size.width), height = Int(screenshot.size.height)
+    let orientation = width > height ? "landscape" : "portrait"
+    let screenOrientation = screen.width > screen.height ? "landscape" : "portrait"
+    let sourceRatio = screenshot.size.width / screenshot.size.height
+    let screenRatio = screen.width / screen.height
+    guard width > 0, height > 0, orientation == screenOrientation,
+          abs(sourceRatio / screenRatio - 1) < 0.01 else {
+        throw ToolError.invalidConfig("\(slide.id): screenshot aspect ratio and orientation must match the frame screen; use a native capture of the selected device")
+    }
+    let provenanceURL = URL(fileURLWithPath: screenshotURL.path + ".capture.json")
+    let hasProvenance = FileManager.default.fileExists(atPath: provenanceURL.path)
+    guard hasProvenance || device.captureRequirements != nil else { return }
+    guard hasProvenance else {
+        throw ToolError.invalidConfig("\(slide.id): missing capture provenance: \(provenanceURL.path); recapture with Scripts/capture-simulator.js")
+    }
+    let provenance = try JSONDecoder().decode(CaptureProvenance.self, from: Data(contentsOf: provenanceURL))
+    let hash = SHA256.hash(data: try Data(contentsOf: screenshotURL)).map { String(format: "%02x", $0) }.joined()
+    guard provenance.schemaVersion == 1, provenance.screenshotSHA256 == hash,
+          provenance.width == width, provenance.height == height, provenance.orientation == orientation else {
+        throw ToolError.invalidConfig("\(slide.id): capture provenance does not match screenshot bytes, dimensions, or orientation; recapture instead of reusing stale metadata")
+    }
+    guard let frameType = device.frame.deviceTypeIdentifier, !frameType.isEmpty,
+          provenance.deviceTypeIdentifier == frameType else {
+        throw ToolError.invalidConfig("\(slide.id): capture deviceTypeIdentifier must match frame.deviceTypeIdentifier")
+    }
+    guard !provenance.runtimeIdentifier.isEmpty, !provenance.runtimeVersion.isEmpty,
+          !provenance.simulatorUDID.isEmpty, !provenance.capturedAt.isEmpty else {
+        throw ToolError.invalidConfig("\(slide.id): incomplete capture provenance")
+    }
+    if let required = device.captureRequirements {
+        guard !required.runtimeVersion.isEmpty, provenance.deviceTypeIdentifier == required.deviceTypeIdentifier,
+              provenance.runtimeVersion == required.runtimeVersion else {
+            throw ToolError.invalidConfig("\(slide.id): capture must use \(required.deviceTypeIdentifier) on runtime \(required.runtimeVersion), found \(provenance.deviceTypeIdentifier) on \(provenance.runtimeVersion)")
         }
     }
 }
@@ -672,7 +745,7 @@ func run() throws {
         try validate(device: deviceName, config: device)
 
         let frameURL = resolve(device.frame.image, relativeTo: configBaseURL)
-        _ = try image(at: frameURL)
+        let frameImage = try image(at: frameURL)
 
         let screenshotRoot = resolve(device.screenshotRoot, relativeTo: configBaseURL)
         let slidesToRender: [Slide]
@@ -690,15 +763,7 @@ func run() throws {
             guard FileManager.default.fileExists(atPath: screenshotURL.path) else {
                 throw ToolError.missingFile("Missing screenshot for \(slide.id): \(screenshotURL.path)")
             }
-            if deviceName == "iphone-duo" {
-                let screenshot = try image(at: screenshotURL)
-                let sourceRatio = screenshot.size.width / screenshot.size.height
-                let screenRatio = device.frame.screen.width / device.frame.screen.height
-                guard screenRatio.isFinite, screenRatio > 0,
-                      abs(sourceRatio / screenRatio - 1) < 0.01 else {
-                    throw ToolError.invalidConfig("\(slide.id): Duo screenshot aspect ratio must match the frame screen; use a native capture of the selected Duo display and orientation")
-                }
-            }
+            try validateCapture(slide: slide, device: device, screenshotURL: screenshotURL, frameImage: frameImage)
         }
 
         if args.validateOnly {

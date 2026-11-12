@@ -35,25 +35,12 @@ struct DeviceConfig: Decodable {
     let canvas: SizeConfig
     let screenshotRoot: String
     let frame: FrameConfig
-    let captureRequirements: CaptureRequirements?
 }
 
-struct CaptureRequirements: Decodable {
-    let deviceTypeIdentifier: String
-    let runtimeVersion: String
-}
-
-struct CaptureProvenance: Decodable {
+struct CaptureRecord: Decodable {
     let schemaVersion: Int
     let screenshotSHA256: String
-    let width: Int
-    let height: Int
-    let orientation: String
     let deviceTypeIdentifier: String
-    let runtimeIdentifier: String
-    let runtimeVersion: String
-    let simulatorUDID: String
-    let capturedAt: String
 }
 
 struct SizeConfig: Decodable {
@@ -268,7 +255,7 @@ func validate(device name: String, config: DeviceConfig) throws {
 }
 
 // Geometry catches stretching; matching aspect ratios alone cannot identify a model or OS.
-func validateCapture(slide: Slide, device: DeviceConfig, screenshotURL: URL, frameImage: NSImage) throws {
+func validateScreenshot(slide: Slide, device: DeviceConfig, screenshotURL: URL, frameImage: NSImage) throws {
     let screen = device.frame.screen
     guard screen.x >= 0, screen.y >= 0, screen.width > 0, screen.height > 0,
           screen.x + screen.width <= frameImage.size.width,
@@ -290,31 +277,23 @@ func validateCapture(slide: Slide, device: DeviceConfig, screenshotURL: URL, fra
           abs(sourceRatio / screenRatio - 1) < 0.01 else {
         throw ToolError.invalidConfig("\(slide.id): screenshot aspect ratio and orientation must match the frame screen; use a native capture of the selected device")
     }
-    let provenanceURL = URL(fileURLWithPath: screenshotURL.path + ".capture.json")
-    let hasProvenance = FileManager.default.fileExists(atPath: provenanceURL.path)
-    guard hasProvenance || device.captureRequirements != nil else { return }
-    guard hasProvenance else {
-        throw ToolError.invalidConfig("\(slide.id): missing capture provenance: \(provenanceURL.path); recapture with Scripts/capture-simulator.js")
+    let captureURL = URL(fileURLWithPath: screenshotURL.path + ".capture.json")
+    let hasCapture = FileManager.default.fileExists(atPath: captureURL.path)
+    // A declared frame model requires a capture record, not a pixel-based guess.
+    guard hasCapture || device.frame.deviceTypeIdentifier != nil else { return }
+    guard let frameType = device.frame.deviceTypeIdentifier, !frameType.isEmpty else {
+        throw ToolError.invalidConfig("\(slide.id): set frame.deviceTypeIdentifier to the model depicted by the frame")
     }
-    let provenance = try JSONDecoder().decode(CaptureProvenance.self, from: Data(contentsOf: provenanceURL))
+    guard hasCapture else {
+        throw ToolError.invalidConfig("\(slide.id): missing capture record: \(captureURL.path); recapture with Scripts/capture-simulator.js")
+    }
+    let capture = try JSONDecoder().decode(CaptureRecord.self, from: Data(contentsOf: captureURL))
     let hash = SHA256.hash(data: try Data(contentsOf: screenshotURL)).map { String(format: "%02x", $0) }.joined()
-    guard provenance.schemaVersion == 1, provenance.screenshotSHA256 == hash,
-          provenance.width == width, provenance.height == height, provenance.orientation == orientation else {
-        throw ToolError.invalidConfig("\(slide.id): capture provenance does not match screenshot bytes, dimensions, or orientation; recapture instead of reusing stale metadata")
+    guard capture.schemaVersion == 1, capture.screenshotSHA256 == hash else {
+        throw ToolError.invalidConfig("\(slide.id): capture record does not match screenshot bytes; recapture instead of reusing stale metadata")
     }
-    guard let frameType = device.frame.deviceTypeIdentifier, !frameType.isEmpty,
-          provenance.deviceTypeIdentifier == frameType else {
-        throw ToolError.invalidConfig("\(slide.id): capture deviceTypeIdentifier must match frame.deviceTypeIdentifier")
-    }
-    guard !provenance.runtimeIdentifier.isEmpty, !provenance.runtimeVersion.isEmpty,
-          !provenance.simulatorUDID.isEmpty, !provenance.capturedAt.isEmpty else {
-        throw ToolError.invalidConfig("\(slide.id): incomplete capture provenance")
-    }
-    if let required = device.captureRequirements {
-        guard !required.runtimeVersion.isEmpty, provenance.deviceTypeIdentifier == required.deviceTypeIdentifier,
-              provenance.runtimeVersion == required.runtimeVersion else {
-            throw ToolError.invalidConfig("\(slide.id): capture must use \(required.deviceTypeIdentifier) on runtime \(required.runtimeVersion), found \(provenance.deviceTypeIdentifier) on \(provenance.runtimeVersion)")
-        }
+    guard capture.deviceTypeIdentifier == frameType else {
+        throw ToolError.invalidConfig("\(slide.id): screenshot device \(capture.deviceTypeIdentifier) must match frame.deviceTypeIdentifier \(frameType)")
     }
 }
 
@@ -763,7 +742,7 @@ func run() throws {
             guard FileManager.default.fileExists(atPath: screenshotURL.path) else {
                 throw ToolError.missingFile("Missing screenshot for \(slide.id): \(screenshotURL.path)")
             }
-            try validateCapture(slide: slide, device: device, screenshotURL: screenshotURL, frameImage: frameImage)
+            try validateScreenshot(slide: slide, device: device, screenshotURL: screenshotURL, frameImage: frameImage)
         }
 
         if args.validateOnly {

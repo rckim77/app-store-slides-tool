@@ -299,66 +299,38 @@ node Scripts/test-duo-locales.js
 node Scripts/test-duo-frame-import.js
 ```
 
-## Capture and frame consistency
+## Screenshot and frame matching
 
-All device types now validate screenshot pixel aspect ratio and orientation against the
-frame's screen rectangle before preview, render, or `--validate-only`. The rectangle
-must fit inside the frame image. Aspect ratio allows less than 1% relative difference
-for rounded frame measurements. The slide canvas is an upload category, not a claim
-about the source device. Matching dimensions alone cannot prove a device model or OS.
-EXIF-rotated screenshots are rejected: use captures with upright pixel data.
+Before preview, render, or `--validate-only`, all device types check that the
+screenshot's pixel aspect ratio and orientation match the frame's screen rectangle.
+The rectangle must fit inside the frame image; aspect ratio allows less than 1%
+relative difference for rounded measurements. EXIF-rotated screenshots are rejected.
+These checks prevent stretching, but dimensions alone cannot identify a device.
+The slide canvas is an App Store upload category, not the screenshot's device model.
 
-For a reproducible set, opt each device into strict capture requirements:
-
-```json
-{
-  "captureRequirements": {
-    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro",
-    "runtimeVersion": "27.2"
-  },
-  "frame": {
-    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro",
-    "image": "/path/to/the-matching-official-frame.png",
-    "screen": { "x": 80, "y": 80, "width": 1206, "height": 2622 },
-    "scale": 0.8,
-    "top": 400
-  }
-}
-```
-
-This fragment illustrates the metadata fields, **not verified frame geometry**. Use
-the correct model/orientation and measured screen rectangle of your actual asset.
-The frame model is a declaration you must verify against the official resource. The
-renderer cannot identify the depicted hardware from arbitrary bezel pixels.
-
-List devices and runtimes with `xcrun simctl list devices -j` and
-`xcrun simctl list runtimes -j`. Select the correct Xcode with `DEVELOPER_DIR` if needed.
-After putting the app in its intended state on the chosen, booted simulator:
+To also enforce the device model, set `frame.deviceTypeIdentifier` to the model
+shown by your frame asset, for example `com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro`.
+There is only one configured model to maintain. Find simulator identifiers with
+`xcrun simctl list devices -j`, then capture from the correct booted simulator:
 
 ```sh
 node Scripts/capture-simulator.js --udid <explicit-simulator-UDID> --output /path/to/new.png
 ```
 
-The helper captures through `simctl`, reads the simulator's actual device-type and
-runtime metadata before and after capture, and writes `new.png.capture.json`. It
-refuses existing destinations. Capture into a new directory to preserve older inputs.
-Keep the sidecar beside its PNG when moving files. The editor copies sidecars when
-it duplicates slides; byte-identical copies retain their capture evidence.
+The helper reads the simulator's actual model and writes `new.png.capture.json`
+containing that model, a schema version, and the SHA-256 of the PNG. The renderer
+requires this record whenever the frame declares a model, checks that it belongs
+to the unchanged screenshot, and rejects a model mismatch even if the dimensions
+happen to match. It also validates any record found beside a legacy screenshot.
+The helper refuses existing destinations. Keep the record beside its PNG when
+moving captures; the editor preserves it when duplicating slides.
 
-Each sidecar records schema version 1, SHA-256 of PNG bytes, pixel width/height,
-orientation, device-type identifier, runtime identifier/version, simulator UDID, and
-capture timestamp. Strict validation requires a sidecar for each source and checks
-its hash, dimensions, orientation, frame model, required device type and exact runtime
-version. A sidecar present on a legacy config is also checked and requires frame
-model metadata. Legacy configs without requirements/sidecars still get geometry
-checks, but do **not** establish model or OS provenance. Do not fabricate sidecars
-for old images or relabel an older runtime as a newer one: recapture instead.
-
-These are local consistency records, not cryptographic attestations. They do not
-prove app build, locale, screen content, Duo display selection or hinge angle, nor
-that metadata has never been manually changed. Inspect captures and official frames
-as part of visual QA. The helper does not change simulator state, install an app, or
-select a screen; follow your project's simulator reservation and capture workflow.
+Existing configs without a frame model or capture records retain geometry-only
+validation. Frame identity is a declaration you must verify against the actual
+asset, and capture records are local consistency checks, not attestations. They
+do not prove the OS version, app build, locale, screen content, or Duo display/hinge
+state. Check those in your app's capture workflow and visual QA. Recapture old or
+modified images instead of inventing records for them.
 
 Regression checks:
 

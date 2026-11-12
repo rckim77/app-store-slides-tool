@@ -36,20 +36,21 @@ function png(width, height, screen) {
   return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk("IHDR", header), chunk("IDAT", zlib.deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
 }
 
-function run(config, device, pattern) {
+function run(config, device, pattern, render = false) {
   fs.writeFileSync(path.join(temp, 'config.json'), JSON.stringify(config));
-  const result = spawnSync(binary, ['--config',path.join(temp,'config.json'),'--device',device,'--validate-only'],{encoding:'utf8'});
+  const result = spawnSync(binary, ['--config',path.join(temp,'config.json'),'--device',device,...(render ? [] : ['--validate-only'])],{encoding:'utf8'});
   assert.equal(result.status, pattern ? 1 : 0, result.stderr);
   if (pattern) assert.match(result.stderr,pattern);
 }
 try {
   for (const [name, preset, canvas, w, h] of [
     ['iphone','iphone-6.3',{width:1206,height:2622},120,260],
-    ['ipad','ipad-13',{width:2064,height:2752},150,200]]) {
+    ['ipad','ipad-13',{width:2064,height:2752},150,200],
+    ['iphone-duo','iphone-duo',{width:1398,height:2034},140,204]]) {
     const shot = path.join(temp,'shot.png'), sidecar = shot+'.capture.json';
     const bytes = png(w,h); fs.writeFileSync(shot,bytes);
     fs.writeFileSync(path.join(temp,'frame.png'),png(w+20,h+20,{x:10,y:10,width:w,height:h}));
-    const type = 'com.apple.CoreSimulator.SimDeviceType.'+(name==='iphone'?'iPhone-18-Pro':'iPad-Pro-13-inch-M5');
+    const type = 'com.apple.CoreSimulator.SimDeviceType.' + name;
     const device={appStorePreset:preset,canvas,screenshotRoot:temp,frame:{image:'frame.png',screen:{x:10,y:10,width:w,height:h},scale:1,top:100}};
     const config={name:'Fixture',version:'test',defaultLocale:'en_US',outputRoot:temp,background:{color:'#000000'},caption:{fontSize:20,color:'#ffffff',topPadding:20,horizontalPadding:20,lineHeight:1,maxLines:2},devices:{[name]:device},slides:[{id:'one',screenshot:'shot.png',captions:{en_US:'One'}}]};
     run(config,name); // Legacy matching geometry still works, without claiming provenance.
@@ -61,22 +62,25 @@ try {
     fs.writeFileSync(shot,png(w+20,h)); run(config,name,/aspect ratio/);
     fs.writeFileSync(shot,bytes);
     device.frame.screen.x=100; run(config,name,/inside the frame/); device.frame.screen.x=10;
-    device.captureRequirements={deviceTypeIdentifier:type,runtimeVersion:'27.2'};
     device.frame.deviceTypeIdentifier=type;
-    run(config,name,/missing capture provenance/);
-    const metadata={schemaVersion:1,screenshotSHA256:crypto.createHash('sha256').update(bytes).digest('hex'),width:w,height:h,orientation:'portrait',deviceTypeIdentifier:type,runtimeIdentifier:'com.apple.CoreSimulator.SimRuntime.iOS-27-2',runtimeVersion:'27.2',simulatorUDID:'fixture',capturedAt:new Date().toISOString()};
+    run(config,name,/missing capture record/);
+    const metadata={schemaVersion:1,screenshotSHA256:crypto.createHash('sha256').update(bytes).digest('hex'),deviceTypeIdentifier:type};
     const write=m=>fs.writeFileSync(sidecar,JSON.stringify(m));
-    write(metadata);run(config,name);
-    write({...metadata,deviceTypeIdentifier:type+'-Other'});run(config,name,/must match frame/);
-    write({...metadata,runtimeVersion:'27.1'});run(config,name,/runtime 27.2/);
-    write({...metadata,width:w+1});run(config,name,/does not match screenshot/);
-    write({...metadata,orientation:'landscape'});run(config,name,/does not match screenshot/);
+    write(metadata);run(config,name);run(config,name,undefined,true);
+    // Identical pixels from another model must fail validation AND rendering.
+    write({...metadata,deviceTypeIdentifier:type+'-Other'});
+    run(config,name,/must match frame/);run(config,name,/must match frame/,true);
     write({...metadata,screenshotSHA256:'0'.repeat(64)});run(config,name,/does not match screenshot/);
     write({...metadata,schemaVersion:2});run(config,name,/does not match screenshot/);
-    write(metadata);delete device.frame.deviceTypeIdentifier;run(config,name,/must match frame/);
-    device.frame.deviceTypeIdentifier=type;device.captureRequirements.deviceTypeIdentifier=type+'-Other';run(config,name,/capture must use/);
+    write(metadata);fs.writeFileSync(shot,png(w*2,h*2));run(config,name,/does not match screenshot/);
+    fs.writeFileSync(shot,bytes);
+    delete device.frame.deviceTypeIdentifier;run(config,name,/set frame.deviceTypeIdentifier/);
+    device.frame.deviceTypeIdentifier='';run(config,name,/set frame.deviceTypeIdentifier/);
+    device.frame.deviceTypeIdentifier=type;
+    // Older, richer records remain readable; runtime details are not enforced here.
+    write({...metadata,width:w,height:h,runtimeVersion:'27.2'});run(config,name);
     fs.writeFileSync(sidecar,'invalid JSON');run(config,name,/error/);
     fs.unlinkSync(sidecar);
   }
-  console.log('Capture consistency: legacy geometry, iPhone/iPad aspect, orientation, bounds, required provenance, model, runtime, hash, dimensions and malformed metadata passed');
+  console.log('Screenshot matching: iPhone/iPad/Duo geometry, EXIF, bounds, required capture, model mismatch, stale hash, and malformed records passed');
 } finally { fs.rmSync(temp,{recursive:true,force:true}); }

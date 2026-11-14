@@ -298,3 +298,45 @@ node Scripts/test-duo.js
 node Scripts/test-duo-locales.js
 node Scripts/test-duo-frame-import.js
 ```
+
+## Screenshot and frame matching
+
+Before preview, render, or `--validate-only`, all device types check that the
+screenshot's pixel aspect ratio and orientation match the frame's screen rectangle.
+The rectangle must fit inside the frame image; aspect ratio allows less than 1%
+relative difference for rounded measurements. EXIF-rotated screenshots are rejected.
+These checks prevent stretching, but dimensions alone cannot identify a device.
+The slide canvas is an App Store upload category, not the screenshot's device model.
+
+To also enforce the device model, set `frame.deviceTypeIdentifier` to the model
+shown by your frame asset, for example `com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro`.
+There is only one configured model to maintain. Find simulator identifiers with
+`xcrun simctl list devices -j`, then capture from the correct booted simulator:
+
+```sh
+node Scripts/capture-simulator.js --udid <explicit-simulator-UDID> --output /path/to/new.png
+```
+
+The helper reads the simulator's actual model and writes `new.png.capture.json`
+containing that model, a schema version, and the SHA-256 of the PNG. The renderer
+requires this record whenever the frame declares a model, checks that it belongs
+to the unchanged screenshot, and rejects a model mismatch even if the dimensions
+happen to match. It also validates any record found beside a legacy screenshot.
+The helper refuses existing destinations. Keep the record beside its PNG when
+moving captures; the editor preserves it when duplicating slides.
+
+Existing configs without a frame model or capture records retain geometry-only
+validation. Frame identity is a declaration you must verify against the actual
+asset, and capture records are local consistency checks, not attestations. They
+do not prove the OS version, app build, locale, screen content, or Duo display/hinge
+state. Check those in your app's capture workflow and visual QA. Recapture old or
+modified images instead of inventing records for them.
+
+Regression checks:
+
+```sh
+swift build
+node Scripts/test-capture-consistency.js
+node Scripts/test-capture-simulator.js
+node Scripts/test-editor-duplicate.js
+```

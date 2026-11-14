@@ -16,6 +16,7 @@ try {
   for (const device of ['iphone', 'ipad']) {
     const dir = path.join(temp, device); fs.mkdirSync(dir);
     fs.writeFileSync(path.join(dir, 'first.png'), 'screenshot');
+    fs.writeFileSync(path.join(dir, 'first.png.capture.json'), 'capture evidence');
     devices[device] = {screenshotRoot:dir};
     for (const locale of ['en_US','fr']) {
       const outputDir = path.join(temp, `${device}-${locale}`); fs.mkdirSync(outputDir);
@@ -34,6 +35,7 @@ try {
   assert.deepEqual(config.slides[1], {...original,id:'first-copy',screenshot:'first-copy.png'});
   for (const device of Object.values(devices)) {
     assert.equal(fs.readFileSync(path.join(device.screenshotRoot,'first-copy.png'),'utf8'),'screenshot');
+    assert.equal(fs.readFileSync(path.join(device.screenshotRoot,'first-copy.png.capture.json'),'utf8'),'capture evidence');
   }
   for (const set of sets) assert.equal(fs.readFileSync(path.join(set.outputDir,'first-copy.png'),'utf8'),'rendered');
   fs.writeFileSync(path.join(devices.iphone.screenshotRoot,'first-copy.png'),'independent');
@@ -53,6 +55,7 @@ try {
   assert.throws(duplicate,/disk write failed/);
   assert.equal(fs.existsSync(path.join(devices.iphone.screenshotRoot,'first-copy-5.png')),false);
   assert.equal(fs.existsSync(path.join(sets[0].outputDir,'first-copy-5.png')),false);
+  assert.equal(fs.existsSync(path.join(devices.iphone.screenshotRoot,'first-copy-5.png.capture.json')),false);
   assert.equal(fs.readFileSync(configPath,'utf8'),before);
   console.log('Duplicate slide: settings, independent assets, ordering, unique IDs, read-only rejection and rollback passed');
 } finally { fs.rmSync(temp,{recursive:true,force:true}); }
